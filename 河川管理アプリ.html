@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>河川管理システム</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif;
+      background:linear-gradient(160deg,#0d1f2d,#1a3545,#0d2030);
+      color:#fff;min-height:100vh;}
+    button{cursor:pointer;font-family:inherit;}
+    select,input{font-family:inherit;}
+    .header{background:rgba(0,0,0,0.45);border-bottom:2px solid rgba(75,174,216,0.4);
+      padding:11px 18px;display:flex;align-items:center;justify-content:space-between;
+      position:sticky;top:0;z-index:100;backdrop-filter:blur(8px);}
+    .header-title{font-size:16px;font-weight:700;color:#4BAED8;}
+    .back-btn{padding:8px 14px;border-radius:8px;border:none;
+      background:rgba(255,255,255,0.15);color:#fff;font-size:13px;font-weight:600;}
+    .content{padding:16px;}
+
+    /* トップ */
+    .top-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:85vh;gap:16px;}
+    .top-btn{width:240px;padding:22px 0;border-radius:14px;
+      border:2px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.2);
+      color:#fff;font-size:22px;font-weight:700;letter-spacing:0.1em;transition:all 0.15s;text-align:center;}
+    .top-btn:hover{background:rgba(75,174,216,0.4);}
+    .top-btn.disabled{background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.3);cursor:not-allowed;}
+    .top-icon{font-size:28px;margin-bottom:6px;}
+    .top-sub{font-size:11px;font-weight:400;margin-top:4px;}
+
+    /* 試算演算 */
+    .sisan-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+    .sisan-title{font-size:15px;font-weight:700;color:#4BAED8;}
+    .sisan-updated{font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px;}
+    .btn-group{display:flex;gap:8px;}
+    .btn-edit{padding:8px 14px;border-radius:8px;border:none;background:rgba(75,174,216,0.35);color:#fff;font-size:13px;font-weight:600;}
+    .btn-cancel{padding:8px 14px;border-radius:8px;border:none;background:rgba(255,255,255,0.15);color:#fff;font-size:13px;font-weight:600;}
+    .btn-save{padding:10px 18px;border-radius:8px;border:none;background:#2980b9;color:#fff;font-size:13px;font-weight:600;}
+    .scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+    table{border-collapse:collapse;width:100%;}
+    .th{background:rgba(75,174,216,0.35);color:#fff;padding:5px 6px;
+      border:1px solid rgba(75,174,216,0.5);text-align:center;font-size:12px;font-weight:600;white-space:nowrap;}
+    .sui-label{background:rgba(75,174,216,0.2);color:#fff;border:1px solid rgba(75,174,216,0.4);
+      text-align:center;vertical-align:middle;font-size:11px;line-height:1.5;padding:6px 4px;}
+    .sui-val{background:rgba(75,174,216,0.15);color:#fff;border:1px solid rgba(75,174,216,0.4);
+      text-align:center;vertical-align:middle;padding:6px 4px;font-size:14px;font-weight:600;}
+    .row-label{background:rgba(75,174,216,0.18);color:rgba(255,255,255,0.85);
+      border:1px solid rgba(75,174,216,0.4);text-align:center;vertical-align:middle;
+      font-size:11px;padding:5px 4px;white-space:nowrap;}
+    .k-cell{background:#5BC8E8;border:1px solid rgba(75,174,216,0.6);
+      text-align:center;vertical-align:middle;padding:0;height:34px;}
+    .r-cell{background:#9ADFF0;border:1px solid rgba(75,174,216,0.6);
+      text-align:center;vertical-align:middle;padding:0;height:34px;}
+    .cell-inp{width:100%;height:100%;border:none;background:transparent;
+      text-align:center;font-size:13px;color:#0a2030;outline:none;padding:0 2px;}
+    .total-cell{background:rgba(255,255,255,0.9);color:#1a3a50;text-align:center;vertical-align:middle;
+      border:1px solid rgba(75,174,216,0.5);font-size:13px;}
+    .sp-note{margin-top:12px;padding:10px;background:rgba(255,255,255,0.08);border-radius:8px;
+      font-size:12px;color:rgba(255,255,255,0.5);text-align:center;}
+
+    /* 河川流量 */
+    .kasen-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+    .kasen-title{font-size:15px;font-weight:700;color:#4BAED8;}
+    .btn-clear{padding:7px 14px;border-radius:8px;border:1px solid rgba(255,80,80,0.5);
+      background:rgba(255,60,60,0.2);color:rgba(255,160,160,0.9);font-size:12px;font-weight:600;}
+    .btn-addrow{margin-top:10px;padding:8px 18px;border-radius:8px;
+      background:rgba(75,174,216,0.3);border:1px solid rgba(75,174,216,0.5);
+      color:#fff;font-size:13px;font-weight:600;}
+    .err-box{background:rgba(255,60,60,0.25);border:1px solid rgba(255,80,80,0.5);
+      border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:#ffaaaa;}
+    .k-hdr{background:rgba(75,174,216,0.5);color:#fff;font-size:12px;font-weight:600;
+      padding:6px 8px;border:1px solid rgba(75,174,216,0.4);text-align:center;white-space:nowrap;}
+    .k-hdr1h{background:rgba(41,128,185,0.75);color:#fff;font-size:12px;font-weight:600;
+      padding:6px 8px;border:1px solid rgba(75,174,216,0.4);text-align:center;white-space:nowrap;}
+    .k-cell-td{border:1px solid rgba(255,255,255,0.12);padding:1px;vertical-align:middle;}
+    .k-inp{width:100%;background:rgba(255,255,255,0.12);border:none;color:#fff;
+      text-align:center;font-size:13px;padding:5px 2px;outline:none;}
+    .k-sel{width:100%;background:rgba(255,255,255,0.12);border:none;color:#fff;
+      font-size:13px;text-align:center;padding:5px 2px;outline:none;}
+    .flow-td{background:rgba(75,174,216,0.12);color:#7dd3f0;text-align:center;font-size:13px;padding:5px 4px;border:1px solid rgba(255,255,255,0.12);}
+    .flow1h-td{background:rgba(41,128,185,0.28);color:#a8dfff;text-align:center;font-size:13px;padding:5px 4px;font-weight:600;border:1px solid rgba(255,255,255,0.12);}
+    .del-btn{background:transparent;border:none;color:rgba(255,100,100,0.7);font-size:15px;padding:2px 4px;}
+    .kasen-note{margin-top:8px;font-size:11px;color:rgba(255,255,255,0.35);}
+    .loading{text-align:center;padding:40px;color:#aaa;}
+  </style>
+</head>
+<body>
+
+<!-- Firebase SDKs -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDvbl4B6Se40klXJ8OVYYkGJ-_ve7HQiuo",
+  authDomain: "kasen-kanri.firebaseapp.com",
+  databaseURL: "https://kasen-kanri-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "kasen-kanri",
+  storageBucket: "kasen-kanri.firebasestorage.app",
+  messagingSenderId: "626923489862",
+  appId: "1:626923489862:web:6b4026e6d208b7d9a5d847"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// ===== 通知音 =====
+function playPing() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type="sine";
+    osc.frequency.setValueAtTime(1046,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880,ctx.currentTime+0.2);
+    gain.gain.setValueAtTime(0.5,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.8);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+0.8);
+  } catch(e){}
+}
+
+// ===== 流量計算 =====
+const COEFF = {
+  oshima:    {a:75.6,   b:2.36},
+  bessho:    {a:137.27, b:0.09},
+  itanami:   {a:92.21,  b:0.89},
+  funamachi: {a:117.91, b:0.36},
+};
+function calcFlow(suii, site) {
+  if(suii===""||suii===null||suii===undefined)return "";
+  const v=Number(suii); if(isNaN(v))return "";
+  const {a,b}=COEFF[site];
+  return Math.round(a*Math.pow(v+b,2)*100)/100;
+}
+
+// ===== UID =====
+let _uid=Date.now();
+const newUid=()=>String(++_uid);
+
+// ===== 10分単位時刻 =====
+const TIME_OPTIONS=[];
+for(let h=0;h<24;h++) for(let m=0;m<60;m+=10)
+  TIME_OPTIONS.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+const MONTHS=[1,2,3,4,5,6,7,8,9,10,11,12];
+function daysInMonth(m){return[31,28,31,30,31,30,31,31,30,31,30,31][m-1]||30;}
+
+// ===== 状態 =====
+let screen="top";
+let isPC=window.innerWidth>=768;
+let sisanData=null;
+let sisanEditing=null;
+let sisanMode="view";
+let kasenRows=[];
+let kasenLoaded=false;
+
+window.addEventListener("resize",()=>{isPC=window.innerWidth>=768;});
+
+// ===== Firebase =====
+// 試算演算：リアルタイム監視
+let sisanFirstLoad=true;
+onValue(ref(db,"sisan"),snap=>{
+  const d=snap.val();
+  if(d){
+    const prev=sisanData;
+    sisanData=d;
+    if(!sisanFirstLoad && sisanMode==="view" && prev && d.updatedAt!==prev.updatedAt){
+      playPing();
+    }
+    if(sisanMode==="view") sisanEditing={...d};
+    sisanFirstLoad=false;
+    if(screen==="sisan") renderSisan();
+  } else {
+    sisanData=makeSisanDefault();
+    sisanEditing={...sisanData};
+    sisanFirstLoad=false;
+    if(screen==="sisan") renderSisan();
+  }
+});
+
+// 河川流量：初回のみ取得
+get(ref(db,"kasen")).then(snap=>{
+  const d=snap.val();
+  if(d && Array.isArray(d.rows)) kasenRows=d.rows;
+  else kasenRows=[];
+  kasenLoaded=true;
+  if(screen==="kasen") renderKasen();
+});
+
+function saveSisan(data){
+  return set(ref(db,"sisan"),data);
+}
+function saveKasen(rows){
+  return set(ref(db,"kasen"),{rows});
+}
+
+// ===== デフォルト =====
+function makeSisanDefault(){
+  return {
+    suijo:"",suika:"",
+    g1:{jk:"",gk:"",jr:"",gr:""},g2:{jk:"",gk:"",jr:"",gr:""},
+    g3:{jk:"",gk:"",jr:"",gr:""},g4:{jk:"",gk:"",jr:"",gr:""},
+    g5:{jk:"",gk:"",jr:"",gr:""},
+    sb:{k:"",r:""},ub:{k:"",r:""},su:{k:"",r:""},uu:{k:"",r:""},
+    updatedAt:null
+  };
+}
+function calcTotal(d){
+  const vals=[d.g1.jr,d.g1.gr,d.g2.jr,d.g2.gr,d.g3.jr,d.g3.gr,
+    d.g4.jr,d.g4.gr,d.g5.jr,d.g5.gr,d.sb.r,d.ub.r,d.su.r,d.uu.r];
+  return Math.round(vals.reduce((a,v)=>a+(parseFloat(v)||0),0)*100)/100;
+}
+function makeKasenRow(month,day){
+  const t=new Date();
+  return{id:newUid(),month:month||String(t.getMonth()+1),day:day||String(t.getDate()),time:"",os:"",bs:"",it:"",fm:""};
+}
+
+// ===== 画面切替 =====
+function navigate(s){
+  screen=s;
+  document.getElementById("header-title").textContent=
+    s==="top"?"🏞️ 河川管理システム":s==="sisan"?"⚙️ 試算演算":"🌊 河川流量";
+  document.getElementById("back-btn").style.display=s==="top"?"none":"block";
+  if(s==="top")    renderTop();
+  if(s==="sisan")  renderSisan();
+  if(s==="kasen")  renderKasen();
+}
+
+// ===== トップ =====
+function renderTop(){
+  document.getElementById("main").innerHTML=`
+    <div class="top-wrap">
+      <button class="top-btn" onclick="navigate('kasen')">
+        <div class="top-icon">🌊</div>河川流量
+      </button>
+      <button class="top-btn disabled" disabled>
+        <div class="top-icon">📊</div>諸　量
+        <div class="top-sub">後日追加</div>
+      </button>
+      <button class="top-btn" onclick="navigate('sisan')">
+        <div class="top-icon">⚙️</div>試算演算
+      </button>
+    </div>`;
+}
+
+// ===== 試算演算 =====
+const GATES=[
+  {key:"g1",label:"1号調節ゲート"},{key:"key2",label:"2号主ゲート"},
+  {key:"g2",label:"2号主ゲート"},{key:"g3",label:"3号主ゲート"},
+  {key:"g4",label:"4号主ゲート"},{key:"g5",label:"5号調節ゲート"},
+];
+const GATES5=[
+  {key:"g1",label:"1号調節ゲート"},{key:"g2",label:"2号主ゲート"},
+  {key:"g3",label:"3号主ゲート"},{key:"g4",label:"4号主ゲート"},
+  {key:"g5",label:"5号調節ゲート"},
+];
+const SMALLS=[
+  {key:"sb",label:"左岸微調節\nゲート"},{key:"ub",label:"右岸微調節\nゲート"},
+  {key:"su",label:"左岸魚道\nゲート"},{key:"uu",label:"右岸魚道\nゲート"},
+];
+
+function renderSisan(){
+  if(!sisanData){document.getElementById("main").innerHTML='<div class="loading">読込中…</div>';return;}
+  const d=sisanMode==="edit"?sisanEditing:sisanData;
+  const canEdit=isPC&&sisanMode==="view";
+  const isEdit=sisanMode==="edit"&&isPC;
+
+  const inp=(val,onch)=>isEdit
+    ?`<input class="cell-inp" type="number" step="0.1" value="${val}" oninput="${onch}">`
+    :`<span style="display:block;padding:6px 4px;font-size:13px;font-weight:600;color:#0a2030">${val}</span>`;
+  const rinp=(val,onch)=>isEdit
+    ?`<input class="cell-inp" type="number" step="0.01" value="${val}" oninput="${onch}" style="color:#1a3a50">`
+    :`<span style="display:block;padding:6px 4px;font-size:13px;color:#0a2030">${val}</span>`;
+  const suiInp=(key,val)=>isEdit
+    ?`<input type="number" step="0.01" value="${val}" oninput="sisanSet('${key}',this.value)" style="width:64px;background:rgba(255,255,255,0.2);border:1px solid #4BAED8;border-radius:4px;color:#fff;text-align:center;font-size:14px;padding:4px;">`
+    :`<span style="font-size:14px;font-weight:600;">${val}</span>`;
+
+  let gateHeaders=GATES5.map(g=>`<th class="th">${g.label}</th>`).join("");
+  let jkRow=GATES5.map(g=>`<td class="k-cell">${inp(d[g.key].jk,`sisanSetG('${g.key}','jk',this.value)`)}</td>`).join("");
+  let gkRow=GATES5.map(g=>`<td class="k-cell">${inp(d[g.key].gk,`sisanSetG('${g.key}','gk',this.value)`)}</td>`).join("");
+  let jrRow=GATES5.map(g=>`<td class="r-cell">${rinp(d[g.key].jr,`sisanSetG('${g.key}','jr',this.value)`)}</td>`).join("");
+  let grRow=GATES5.map(g=>`<td class="r-cell">${rinp(d[g.key].gr,`sisanSetG('${g.key}','gr',this.value)`)}</td>`).join("");
+
+  let smallHeaders=SMALLS.map(s=>`<th class="th" style="white-space:pre-line">${s.label}</th>`).join("");
+  let skRow=SMALLS.map(s=>`<td class="k-cell">${inp(d[s.key].k,`sisanSetS('${s.key}','k',this.value)`)}</td>`).join("");
+  let srRow=SMALLS.map(s=>`<td class="r-cell">${rinp(d[s.key].r,`sisanSetS('${s.key}','r',this.value)`)}</td>`).join("");
+
+  document.getElementById("main").innerHTML=`
+    <div class="sisan-header">
+      <div>
+        <div class="sisan-title">⚙️ 試算演算</div>
+        ${sisanData.updatedAt?`<div class="sisan-updated">最終更新: ${new Date(sisanData.updatedAt).toLocaleString("ja-JP")}</div>`:""}
+      </div>
+      <div class="btn-group">
+        ${canEdit?`<button class="btn-edit" onclick="sisanStartEdit()">✏️ 編集</button>`:""}
+        ${sisanMode==="edit"?`
+          <button class="btn-cancel" onclick="sisanCancel()">キャンセル</button>
+          <button class="btn-save" onclick="sisanSave()">🔔 更新・全端末反映</button>
+        `:""}
+      </div>
+    </div>
+    <div class="scroll-wrap">
+      <div style="min-width:760px">
+        <table>
+          <colgroup>
+            <col style="width:70px"/><col style="width:70px"/><col style="width:58px"/>
+            <col style="width:108px"/><col style="width:108px"/><col style="width:108px"/>
+            <col style="width:108px"/><col style="width:108px"/>
+          </colgroup>
+          <thead><tr><th class="th" colspan="2"></th><th class="th"></th>${gateHeaders}</tr></thead>
+          <tbody>
+            <tr>
+              <td class="sui-label" rowspan="2"><div>堰上流水位</div><div style="font-size:10px">(T.Pm)</div></td>
+              <td class="sui-val" rowspan="2">${suiInp("suijo",d.suijo)}</td>
+              <td class="row-label">上段開度<br><span style="font-size:10px">（cm）</span></td>
+              ${jkRow}
+            </tr>
+            <tr>
+              <td class="row-label">下段開度<br><span style="font-size:10px">（cm）</span></td>
+              ${gkRow}
+            </tr>
+            <tr>
+              <td class="sui-label" rowspan="2"><div>堰下流水位</div><div style="font-size:10px">(T.Pm)</div></td>
+              <td class="sui-val" rowspan="2">${suiInp("suika",d.suika)}</td>
+              <td class="row-label">上段放流量<br><span style="font-size:10px">（㎥/s）</span></td>
+              ${jrRow}
+            </tr>
+            <tr>
+              <td class="row-label">下段放流量<br><span style="font-size:10px">（㎥/s）</span></td>
+              ${grRow}
+            </tr>
+          </tbody>
+        </table>
+        <table style="margin-top:18px">
+          <colgroup>
+            <col style="width:140px"/>
+            <col style="width:120px"/><col style="width:120px"/>
+            <col style="width:120px"/><col style="width:120px"/>
+            <col style="width:90px"/>
+          </colgroup>
+          <thead><tr><th class="th"></th>${smallHeaders}<th class="th"></th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="row-label">開度（cm）</td>
+              ${skRow}
+              <td class="total-cell" rowspan="2">
+                <div style="font-size:11px;margin-bottom:4px">合計</div>
+                <div style="font-size:18px;font-weight:700">${calcTotal(d)}</div>
+              </td>
+            </tr>
+            <tr>
+              <td class="row-label">放流量（㎥/s）</td>
+              ${srRow}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ${!isPC?`<div class="sp-note">📱 閲覧専用モード｜入力はPCから行ってください</div>`:""}
+  `;
+}
+
+window.sisanStartEdit=()=>{sisanEditing=JSON.parse(JSON.stringify(sisanData));sisanMode="edit";renderSisan();}
+window.sisanCancel=()=>{sisanMode="view";renderSisan();}
+window.sisanSet=(key,val)=>{sisanEditing[key]=val;}
+window.sisanSetG=(gkey,field,val)=>{if(!sisanEditing[gkey])sisanEditing[gkey]={};sisanEditing[gkey][field]=val;}
+window.sisanSetS=(skey,field,val)=>{if(!sisanEditing[skey])sisanEditing[skey]={};sisanEditing[skey][field]=val;}
+window.sisanSave=async()=>{
+  const nd={...sisanEditing,updatedAt:new Date().toISOString()};
+  try{
+    await saveSisan(nd);
+    sisanMode="view";
+    playPing();
+    alert("✅ 更新しました。全端末へ反映されます。");
+  }catch(e){alert("保存エラー: "+e.message);}
+}
+
+// ===== 河川流量 =====
+function toNum(row){
+  const mo=parseInt(row.month)||0,da=parseInt(row.day)||0;
+  if(!row.time)return mo*10000+da*100+9999;
+  const[h,m]=row.time.split(":").map(Number);
+  return mo*10000+da*100+(h*60+m)/100;
+}
+
+function renderKasen(){
+  if(!kasenLoaded){document.getElementById("main").innerHTML='<div class="loading">読込中…</div>';return;}
+  const sorted=[...kasenRows].sort((a,b)=>toNum(a)-toNum(b));
+
+  const timeOpts=TIME_OPTIONS.map(t=>`<option value="${t}">${t}</option>`).join("");
+  const moOpts=MONTHS.map(m=>`<option value="${m}">${m}月</option>`).join("");
+
+  const rows=sorted.map((row,idx)=>{
+    const mo=parseInt(row.month)||1;
+    const dayOpts=Array.from({length:daysInMonth(mo)},(_,i)=>i+1)
+      .map(d=>`<option value="${d}"${String(d)===String(row.day)?" selected":""}>${d}日</option>`).join("");
+    const moOptsS=MONTHS.map(m=>`<option value="${m}"${String(m)===String(row.month)?" selected":""}>${m}月</option>`).join("");
+    const timeOptsS=`<option value="">--:--</option>`+TIME_OPTIONS.map(t=>`<option value="${t}"${t===row.time?" selected":""}>${t}</option>`).join("");
+    const bg=idx%2===0?"rgba(255,255,255,0.04)":"transparent";
+    const of=row.os!==""?calcFlow(row.os,"oshima"):"";
+    const bf=row.bs!==""?calcFlow(row.bs,"bessho"):"";
+    const h1=of===""&&bf===""?"":(Math.round(((Number(of)||0)+(Number(bf)||0))*100)/100);
+    return `<tr style="background:${bg}">
+      <td class="k-cell-td" style="min-width:50px"><select class="k-sel" onchange="kasenUpdate('${row.id}','month',this.value)">${moOptsS}</select></td>
+      <td class="k-cell-td" style="min-width:50px"><select class="k-sel" onchange="kasenUpdate('${row.id}','day',this.value)">${dayOpts}</select></td>
+      <td class="k-cell-td" style="min-width:72px"><select class="k-sel" onchange="kasenUpdate('${row.id}','time',this.value)">${timeOptsS}</select></td>
+      <td class="k-cell-td" style="min-width:72px"><input class="k-inp" type="number" step="0.001" value="${row.os}" placeholder="0.000" oninput="kasenUpdate('${row.id}','os',this.value)"></td>
+      <td class="flow-td">${of}</td>
+      <td class="k-cell-td" style="min-width:72px"><input class="k-inp" type="number" step="0.001" value="${row.bs}" placeholder="0.000" oninput="kasenUpdate('${row.id}','bs',this.value)"></td>
+      <td class="flow-td">${bf}</td>
+      <td class="flow1h-td">${h1}</td>
+      <td class="k-cell-td" style="min-width:72px"><input class="k-inp" type="number" step="0.001" value="${row.it}" placeholder="0.000" oninput="kasenUpdate('${row.id}','it',this.value)"></td>
+      <td class="flow-td">${row.it!==""?calcFlow(row.it,"itanami"):""}</td>
+      <td class="k-cell-td" style="min-width:72px"><input class="k-inp" type="number" step="0.001" value="${row.fm}" placeholder="0.000" oninput="kasenUpdate('${row.id}','fm',this.value)"></td>
+      <td class="flow-td">${row.fm!==""?calcFlow(row.fm,"funamachi"):""}</td>
+      <td class="k-cell-td" style="text-align:center"><button class="del-btn" onclick="kasenDel('${row.id}')">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("main").innerHTML=`
+    <div class="kasen-header">
+      <div class="kasen-title">🌊 河川流量</div>
+      <button class="btn-clear" onclick="kasenClear()">🗑️ 全履歴を削除</button>
+    </div>
+    <div class="scroll-wrap">
+      <table style="min-width:900px;border-collapse:collapse;width:100%">
+        <thead>
+          <tr>
+            <th class="k-hdr" colspan="3">日時</th>
+            <th class="k-hdr" colspan="2">大島</th>
+            <th class="k-hdr" colspan="2">別所橋</th>
+            <th class="k-hdr1h">1h後流入量(m³/s)</th>
+            <th class="k-hdr" colspan="2">板波</th>
+            <th class="k-hdr" colspan="2">船町</th>
+            <th class="k-hdr" style="width:28px"></th>
+          </tr>
+          <tr>
+            <th class="k-hdr">月</th><th class="k-hdr">日</th><th class="k-hdr">時刻</th>
+            <th class="k-hdr">水位(m)</th><th class="k-hdr" style="background:rgba(41,128,185,0.4)">流量(m³/s)</th>
+            <th class="k-hdr">水位(m)</th><th class="k-hdr" style="background:rgba(41,128,185,0.4)">流量(m³/s)</th>
+            <th class="k-hdr1h"></th>
+            <th class="k-hdr">水位(m)</th><th class="k-hdr" style="background:rgba(41,128,185,0.4)">流量(m³/s)</th>
+            <th class="k-hdr">水位(m)</th><th class="k-hdr" style="background:rgba(41,128,185,0.4)">流量(m³/s)</th>
+            <th class="k-hdr"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${kasenRows.length===0?`<tr><td colspan="13" style="text-align:center;padding:24px;color:rgba(255,255,255,0.35);font-size:13px">記録がありません。行を追加してください。</td></tr>`:rows}
+        </tbody>
+      </table>
+    </div>
+    <button class="btn-addrow" onclick="kasenAdd()">＋ 行を追加（+10分）</button>
+    <div class="kasen-note">※ 水位入力で流量・1h後流入量を自動計算 ／ 月日・時刻を変更すると時系列順に並び替わります</div>
+  `;
+}
+
+window.kasenUpdate=(id,field,val)=>{
+  kasenRows=kasenRows.map(r=>r.id===id?{...r,[field]:val}:r);
+  saveKasen(kasenRows);
+  renderKasen();
+}
+window.kasenDel=(id)=>{
+  kasenRows=kasenRows.filter(r=>r.id!==id);
+  saveKasen(kasenRows);
+  renderKasen();
+}
+window.kasenAdd=()=>{
+  const sorted=[...kasenRows].sort((a,b)=>toNum(a)-toNum(b));
+  const last=sorted[sorted.length-1];
+  const nr=makeKasenRow(last?.month,last?.day);
+  if(last?.time){
+    const[h,m]=last.time.split(":").map(Number);
+    const tot=h*60+m+10;
+    nr.time=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
+  }
+  kasenRows=[...kasenRows,nr];
+  saveKasen(kasenRows);
+  renderKasen();
+}
+window.kasenClear=()=>{
+  if(!confirm("全履歴を削除しますか？\nこの操作は元に戻せません。"))return;
+  kasenRows=[];
+  saveKasen([]);
+  renderKasen();
+}
+
+// ===== 初期化 =====
+navigate("top");
+</script>
+
+<!-- HTML骨格 -->
+<div class="header">
+  <div class="header-title" id="header-title">🏞️ 河川管理システム</div>
+  <button class="back-btn" id="back-btn" style="display:none" onclick="navigate('top')">← トップ</button>
+</div>
+<div class="content" id="main">
+  <div class="loading">読込中…</div>
+</div>
+
+</body>
+</html>
