@@ -7,6 +7,7 @@ RIVER_FILES = {
     "bessho":    "2206100400007",
     "itanami":   "2206100400002",
     "funamachi": "2206100400001",
+    "manganji":  "2206100400008",
 }
 HEADERS = {
     "Referer": "https://www.river.go.jp/",
@@ -51,6 +52,7 @@ def make_row(obs_time, suii_dict):
         "bs": str(suii_dict.get("bessho","")) if suii_dict.get("bessho") is not None else "",
         "it": str(suii_dict.get("itanami","")) if suii_dict.get("itanami") is not None else "",
         "fm": str(suii_dict.get("funamachi","")) if suii_dict.get("funamachi") is not None else "",
+        "mg": str(suii_dict.get("manganji","")) if suii_dict.get("manganji") is not None else "",
     }
 
 print("取得中...")
@@ -64,7 +66,7 @@ rows = []
 for t in times:
     suii = {site: all_data[site].get(t) for site in RIVER_FILES}
     rows.append(make_row(t, suii))
-    print(f"  {t}: 大島={suii['oshima']} 別所橋={suii['bessho']} 板波={suii['itanami']} 船町={suii['funamachi']}")
+    print(f"  {t}: 大島={suii['oshima']} 別所橋={suii['bessho']} 板波={suii['itanami']} 万願寺={suii['manganji']} 船町={suii['funamachi']}")
 
 ok = requests.put(f"{FIREBASE_URL}/kasen.json", json={"rows": rows})
 print(f"Firebase書き込み{'成功✅' if ok.status_code==200 else '失敗❌'}")
