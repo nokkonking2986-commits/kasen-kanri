@@ -38,7 +38,7 @@ def get_suii_history(file_id):
         result[data["obsTime"]] = data["obsValue"]["stg"]
     return result
 
-def make_row(obs_time, suii_dict):
+def make_row(obs_time, suii_dict, rain=""):
     parts = obs_time.split(" ")
     dp = parts[0].split("/")
     uid = obs_time.replace("/","").replace(" ","").replace(":","")
@@ -47,7 +47,7 @@ def make_row(obs_time, suii_dict):
         "month": str(int(dp[1])),
         "day": str(int(dp[2])),
         "time": parts[1] if len(parts) > 1 else "00:00",
-        "rain": "",
+        "rain": rain,
         "os": str(suii_dict.get("oshima","")) if suii_dict.get("oshima") is not None else "",
         "bs": str(suii_dict.get("bessho","")) if suii_dict.get("bessho") is not None else "",
         "it": str(suii_dict.get("itanami","")) if suii_dict.get("itanami") is not None else "",
@@ -55,7 +55,23 @@ def make_row(obs_time, suii_dict):
         "mg": str(suii_dict.get("manganji","")) if suii_dict.get("manganji") is not None else "",
     }
 
-print("取得中...")
+# ===== 既存データを取得（雨量を引き継ぐため） =====
+print("既存データ確認中...")
+existing_rain = {}
+try:
+    res = requests.get(f"{FIREBASE_URL}/kasen.json")
+    if res.status_code == 200 and res.json():
+        existing_rows = res.json().get("rows", [])
+        for r in existing_rows:
+            rid = r.get("id")
+            rain_val = r.get("rain", "")
+            if rid and rain_val:
+                existing_rain[rid] = rain_val
+        print(f"  既存の雨量データ: {len(existing_rain)}件")
+except Exception as e:
+    print(f"  既存データ取得失敗（無視して続行）: {e}")
+
+print("水位取得中...")
 all_data = {}
 for site, fid in RIVER_FILES.items():
     all_data[site] = get_suii_history(fid)
@@ -65,8 +81,11 @@ times = sorted(all_data["itanami"].keys())[-12:]
 rows = []
 for t in times:
     suii = {site: all_data[site].get(t) for site in RIVER_FILES}
-    rows.append(make_row(t, suii))
-    print(f"  {t}: 大島={suii['oshima']} 別所橋={suii['bessho']} 板波={suii['itanami']} 万願寺={suii['manganji']} 船町={suii['funamachi']}")
+    uid = t.replace("/","").replace(" ","").replace(":","")
+    # 同じ日時(id)に既存の雨量があれば引き継ぐ
+    rain_val = existing_rain.get(uid, "")
+    rows.append(make_row(t, suii, rain_val))
+    print(f"  {t}: 大島={suii['oshima']} 別所橋={suii['bessho']} 板波={suii['itanami']} 万願寺={suii['manganji']} 船町={suii['funamachi']} 雨量={rain_val}")
 
 ok = requests.put(f"{FIREBASE_URL}/kasen.json", json={"rows": rows})
 print(f"Firebase書き込み{'成功✅' if ok.status_code==200 else '失敗❌'}")
