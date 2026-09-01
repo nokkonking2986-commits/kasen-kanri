@@ -44,7 +44,11 @@ def obs_fcd(obs_cd):
 
 
 def fetch_json(obs_cd, app_time):
-    app_time = app_time.replace(minute=(app_time.minute // 10) * 10, second=0, microsecond=0)
+    # river.go.jpは10分値ファイルの公開が数分遅れることがあるため、
+    # 丸めた時刻からさらに10分引いて、確実に公開済みのファイルを参照する
+    # (旧fetch_rain.pyと同じ調整。cron-job.orgでぴったり実行するようになった際、
+    # この調整が無いと全観測所404でクラッシュすることを確認済み)。
+    app_time = app_time.replace(minute=(app_time.minute // 10) * 10, second=0, microsecond=0) - timedelta(minutes=10)
     fcd = obs_fcd(obs_cd)
     date_str = app_time.strftime("%Y%m%d")
     time_str = app_time.strftime("%H%M")
@@ -105,6 +109,9 @@ for key, name, obs_cd in STATIONS:
     }
 
 # ===== kwRainRaw(時間雨量の実測履歴、実測雨量ベースの流量予測モデル入力用)=====
+if not all_hours:
+    print("全観測所で取得失敗のため、今回はkwRainRaw/rain_liveへの書き込みをスキップします。")
+    raise SystemExit(1)
 start_hour = min(all_hours)
 n_past = int((now_hour - start_hour).total_seconds() // 3600) + 1
 times = [start_hour + timedelta(hours=i) for i in range(n_past)]
