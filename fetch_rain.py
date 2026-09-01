@@ -64,7 +64,7 @@ print(f"Firebase書き込み(rain_live){'成功✅' if ok.status_code == 200 els
 # (rain_liveは最新値の上書きのみなので、これとは別に履歴を残す)。
 now = datetime.now(JST)
 history_key = now.strftime("%Y%m%d%H%M")
-history_entry = {site: {"rnHr": v.get("rnHr"), "rn10m": v.get("rn10m")} for site, v in all_data.items()}
+history_entry = {site: {"rnHr": v.get("rnHr"), "rn10m": v.get("rn10m"), "rnInc": v.get("rnInc")} for site, v in all_data.items()}
 history_entry["_time"] = now.strftime("%Y-%m-%d %H:%M")
 ok2 = requests.put(f"{FIREBASE_URL}/rain_history/{history_key}.json", json=history_entry)
 print(f"Firebase書き込み(rain_history/{history_key}){'成功✅' if ok2.status_code == 200 else '失敗❌'}")
