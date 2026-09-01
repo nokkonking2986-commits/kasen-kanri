@@ -2,7 +2,7 @@ name: kawabou
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '1,11,21,31,41,51 * * * *'
   workflow_dispatch:
 
 jobs:
