@@ -147,12 +147,11 @@
 /* overflow-xのみ指定だとoverflow-yが暗黙にauto化され、position:stickyの基準がこの枠自体に
    なってしまい(高さが内容にフィットするため)実質固定されなくなる。河川流量・流域雨量と同様、
    明確な最大高さ+overflow-y:autoにして、ヘッダーが正しく上部に固定されるようにする。 */
-.kq-scroll{overflow-x:auto;overflow-y:auto;max-height:70vh;-webkit-overflow-scrolling:touch;border:1px solid rgba(75,174,216,0.35);
+.kq-scroll{overflow-x:auto;overflow-y:auto;max-height:88vh;-webkit-overflow-scrolling:touch;border:1px solid rgba(75,174,216,0.35);
   border-radius:8px;background:rgba(255,255,255,0.03);}
 .kq-table{border-collapse:collapse;font-size:11px;width:auto;}
 .kq-table th,.kq-table td{padding:4px 6px;text-align:center;border:1px solid rgba(75,174,216,0.25);
   white-space:nowrap;font-variant-numeric:tabular-nums;color:#fff;}
-.kq-table td{padding:12px 6px;}
 .kq-table thead th{background:#3a7ea3;color:#fff;font-weight:600;position:sticky;top:0;z-index:2;}
 .kq-srccol{position:sticky;left:0;background:#152535;text-align:left;font-weight:700;
   z-index:1;border-right:2px solid rgba(75,174,216,0.5);min-width:100px;}
