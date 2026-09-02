@@ -1735,6 +1735,10 @@ function toNum(row){
 
 function renderKasen(){
   if(!kasenLoaded){document.getElementById("main").innerHTML='<div class="loading">読込中…</div>';return;}
+  // kasenAutoFetch()完了後にもrenderKasen()が呼ばれ表全体を作り直すため、
+  // その間にユーザーが表内をスクロールしていると位置が失われて上に戻ってしまう。
+  // 再描画前のスクロール位置を保存し、再描画後に復元する(ばぶ報告、2026-09)。
+  const prevScrollTop = document.getElementById("kasen-scroll")?.scrollTop ?? 0;
   const sorted=[...kasenRows].sort((a,b)=>toNum(a)-toNum(b));
 
   const rows=sorted.map((row,idx)=>{
@@ -1817,6 +1821,8 @@ function renderKasen(){
     </div>
     <div class="kasen-note">※ 水位入力で流量・1h後流入量を自動計算 / 🌊実測nowcastは国交省「川の防災情報」の実測雨量を基にした1〜6h後の参考値です(将来分の雨量は0とみなす)</div>`;
   applyKasenStickyHeader();
+  const scrollEl = document.getElementById("kasen-scroll");
+  if(scrollEl) scrollEl.scrollTop = prevScrollTop;
 }
 
 // ヘッダー(月/日/時刻・6h雨量・水位/流量…の2段見出し)を、#kasen-scroll内でスクロールしても
