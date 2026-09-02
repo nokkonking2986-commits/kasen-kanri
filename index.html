@@ -18,7 +18,8 @@
     .header{background:rgba(0,0,0,0.45);border-bottom:2px solid rgba(75,174,216,0.4);
       padding:8px 18px;display:flex;align-items:center;justify-content:space-between;
       position:sticky;top:0;z-index:100;backdrop-filter:blur(8px);}
-    .header-title{font-size:16px;font-weight:700;color:#4BAED8;}
+    .header-title{font-size:16px;font-weight:700;color:#4BAED8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;writing-mode:horizontal-tb;word-break:keep-all;}
+    .nav-btns{flex-shrink:0;}
     .back-btn{padding:4px 14px;border-radius:8px;border:none;
       background:rgba(255,255,255,0.15);color:#fff;font-size:13px;font-weight:600;}
     .nav-btns{display:flex;gap:6px;}
