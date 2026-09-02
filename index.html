@@ -906,7 +906,9 @@ function suibunFieldHtml(b){
   const val = rec[b.field];
   let txt="－";
   if(val!==undefined && val!==null && val!==""){
-    txt = (b.field==="stg") ? Number(val).toFixed(2) : String(val);
+    txt = (b.field==="stg") ? Number(val).toFixed(2)
+        : (b.field==="rnInc") ? Number(val).toFixed(1)
+        : String(val);
   }
   return `<div class="suibun-box" data-id="${b.id}" style="${posStyle}${editBorder}color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;" onpointerdown="suibunDragStart(event,'${b.id}')">${txt}</div>`;
 }
@@ -1065,12 +1067,24 @@ async function suibunRefresh(){
 // 10分ごとに書き込む)を使う。fetch_rain.pyはrain_live(最新値の上書き)に加えて
 // rain_history/{YYYYMMDDHHmm}に毎回のスナップショットを積み上げるようにしたので、
 // このアプリはその履歴を読むだけでよい(2026-09〜運用開始、それ以前の履歴は無い)。
+// 系統(河川系統)ごとにまとまるよう並び替え済み(ばぶ提案、2026-09)。
+// 系統分けはFORECAST_GROUPS(実測雨量ベースの流量予測モデル)と同じ考え方だが、
+// 表示名は「◯◯系統」で統一。福住・火打岩・今田・大堰・天神・北条・小野大島は
+// 単独観測所(系統名なし)のため、RYUIKI_SYSTEM_OFに登録しない。
 const RYUIKI_STATIONS = [
-  ["aogaki","青垣"], ["hikami","氷上"], ["kaibara","柏原"], ["fukuzumi","福住"],
-  ["hiuchi","火打岩"], ["funamachi","船町"], ["sugihara","杉原"], ["konda","今田"],
-  ["itanami","板波"], ["tenjin","天神"], ["yoshikawa","吉川"], ["taniue","谷上"],
-  ["hojo","北条"], ["yachiyo","八千代"], ["ono","小野"], ["hosokawa","細川"], ["oze","加古川(大堰)"],
+  ["aogaki","青垣"], ["hikami","氷上"], ["kaibara","柏原"], ["funamachi","船町"],
+  ["sugihara","杉原"], ["yachiyo","八千代"], ["itanami","板波"],
+  ["tenjin","天神"], ["hojo","北条"], ["ono","小野"],
+  ["taniue","谷上"], ["yoshikawa","吉川"], ["hosokawa","細川"],
+  ["fukuzumi","福住"], ["hiuchi","火打岩"], ["konda","今田"],
+  ["oze","加古川(大堰)"],
 ];
+const RYUIKI_SYSTEM_OF = {
+  aogaki:"船町系統", hikami:"船町系統", kaibara:"船町系統", funamachi:"船町系統",
+  sugihara:"板波系統", yachiyo:"板波系統", itanami:"板波系統",
+  taniue:"別所橋系統", yoshikawa:"別所橋系統", hosokawa:"別所橋系統",
+  hojo:"万願寺系統",
+};
 let ryuikiHistory = null; // {"YYYYMMDDHHmm": {site:{rnHr,rn10m}, _time}, ...}
 let ryuikiMode = "10min"; // "10min" | "hour"
 
@@ -1149,6 +1163,7 @@ function renderRyuiki(){
     return `<tr><td class="k-cell-td k-sticky-td" style="left:0;min-width:100px;text-align:center;color:#fff;font-size:13px;background:#1b2b3b">${timeLabel}</td>${cells}</tr>`;
   }).join("");
 
+  const groupSites = [null, ...RYUIKI_STATIONS.map(([site])=>site)];
   const groupNames = ["流域平均", ...RYUIKI_STATIONS.map(([,name])=>name)];
   const groupHeaderCells = groupNames.map(name=>
     `<th class="k-hdr" colspan="2" style="position:sticky;top:0;z-index:15;background-color:#17324a">${name}</th>`
@@ -1156,6 +1171,22 @@ function renderRyuiki(){
   const subHeaderCells = groupNames.map(()=>
     `<th class="k-hdr" style="min-width:70px;position:sticky;top:0;z-index:15;background-color:#17324a">${intervalLabel}</th><th class="k-hdr" style="min-width:70px;position:sticky;top:0;z-index:15;background-color:#17324a">累計雨量</th>`
   ).join("");
+  // 系統(河川系統)ごとに観測所をまとめる見出し行(ばぶ提案、2026-09)。
+  // 系統名が無い観測所(流域平均・単独観測所)は空欄セルで埋める。
+  const systemHeaderCells = (()=>{
+    const cells=[];
+    let i=0;
+    while(i<groupSites.length){
+      const sys = groupSites[i] ? RYUIKI_SYSTEM_OF[groupSites[i]] : null;
+      let span=1;
+      if(sys){
+        while(i+span<groupSites.length && groupSites[i+span] && RYUIKI_SYSTEM_OF[groupSites[i+span]]===sys) span++;
+      }
+      cells.push(`<th class="k-hdr" colspan="${span*2}" style="position:sticky;top:0;z-index:16;background-color:${sys?'#0f2536':'#17324a'}">${sys||""}</th>`);
+      i+=span;
+    }
+    return cells.join("");
+  })();
 
   document.getElementById("main").innerHTML=`
     <div class="sisan-header">
@@ -1172,7 +1203,8 @@ function renderRyuiki(){
     <div class="scroll-wrap" id="ryuiki-scroll" style="max-height:70vh;overflow-y:auto">
       <table style="border-collapse:separate;border-spacing:0;min-width:900px">
         <thead id="ryuiki-thead">
-          <tr><th class="k-hdr k-sticky-hdr" rowspan="2" style="left:0;top:0;min-width:100px;z-index:25;background-color:#17324a">月日時分</th>${groupHeaderCells}</tr>
+          <tr><th class="k-hdr k-sticky-hdr" rowspan="3" style="left:0;top:0;min-width:100px;z-index:25;background-color:#17324a">月日時分</th>${systemHeaderCells}</tr>
+          <tr>${groupHeaderCells}</tr>
           <tr>${subHeaderCells}</tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
@@ -1189,11 +1221,11 @@ function applyRyuikiStickyHeader(){
   const thead = document.getElementById("ryuiki-thead");
   if(!thead) return;
   const rows = thead.querySelectorAll("tr");
-  if(rows[0]) rows[0].querySelectorAll("th").forEach(th=>{ th.style.top = "0px"; });
-  if(rows[1]){
-    const row1H = rows[0] ? rows[0].getBoundingClientRect().height : 0;
-    rows[1].querySelectorAll("th").forEach(th=>{ th.style.top = row1H+"px"; });
-  }
+  let offset = 0;
+  rows.forEach(row=>{
+    row.querySelectorAll("th").forEach(th=>{ th.style.top = offset+"px"; });
+    offset += row.getBoundingClientRect().height;
+  });
 }
 
 // ===== 諸量 =====
@@ -1269,7 +1301,7 @@ function reloadRadar(){
 
 // ===== 降水予報(v6の表デザインを踏襲、3つの情報源×4市を比較) =====
 const KOUSUI_CITIES = [
-  {name:"加古川市", wnStations:["大堰"],                    jmaKey:"加古川市",   yahooKey:"加古川市"},
+  {name:"加古川市", wnStations:["加古川市"],                 jmaKey:"加古川市",   yahooKey:"加古川市"},
   {name:"西脇市",   wnStations:["杉原","八千代","板波"],      jmaKey:"板波流域",   yahooKey:"西脇市"},
   {name:"丹波市",   wnStations:["青垣","氷上","柏原","船町"], jmaKey:"船町流域",   yahooKey:"丹波市"},
   {name:"小野市",   wnStations:["小野"],                     jmaKey:"小野大島",   yahooKey:"小野市"},
