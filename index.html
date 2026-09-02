@@ -1028,7 +1028,9 @@ async function suibunRefresh(){
       const riverResults = await Promise.all(liveIds.map(id=>fetchSuiiHistory(RIVER_FILES[id])));
       liveIds.forEach((id,i)=>{
         const stg=latestVal(riverResults[i]);
-        const q = stg!==null ? calcFlow(String(stg), id) : "";
+        // 取得が一時的にnullを返しただけの場合は前回値を残す(「－」に戻さない)
+        if(stg===null){ return; }
+        const q = calcFlow(String(stg), id);
         suibunLive[id]={...(suibunLive[id]||{}), stg, q};
       });
       // ダム：river.go.jpの当該エンドポイントはCORS非対応のため、
