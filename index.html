@@ -944,6 +944,7 @@ function renderSuibun(){
     <div class="sisan-header">
       <div class="sisan-title">🗺️ 流域水文図</div>
       <div class="btn-group">
+        <button class="btn-cancel" onclick="suibunRefresh()">🔄 更新</button>
         <button class="${isMain?'btn-edit':'btn-cancel'}" onclick="suibunSetMode('main')">🗺️ ダム・河川情報</button>
         <button class="${!isMain?'btn-edit':'btn-cancel'}" onclick="suibunSetMode('rain')">☔ 雨量</button>
         <button class="${suibunEditMode?'btn-save':'btn-cancel'}" onclick="suibunToggleEdit()">${suibunEditMode?'✅ 位置調整を終了':'✏️ 位置調整'}</button>
@@ -1357,6 +1358,7 @@ function renderKousui(){
     <div style="padding:8px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div style="font-size:15px;font-weight:700;color:#4BAED8">🌦️ 降水予報（加古川・西脇・丹波・小野）</div>
+        <button onclick="refreshKousuiAll()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.12);color:#a8dfff;font-size:12px;font-weight:600;">🔄 更新</button>
       </div>
       <div class="kq-note">
         ウェザーニュース・日本気象協会・Yahoo!天気いずれも、Claude Codeに「◯◯で予測して」と依頼した際に更新されます。取得元・取得時刻が異なるため、時間軸は目安(取得時点からの経過時間)です。<br>
@@ -1783,6 +1785,7 @@ function renderKasen(){
     <div class="kasen-header">
       <div class="kasen-title">🌊 河川流量</div>
       <div style="display:flex;gap:8px">
+        <button onclick="kasenAutoFetch()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.12);color:#a8dfff;font-size:12px;font-weight:600;">🔄 更新</button>
         <button onclick="downloadForecastLog()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,190,80,0.5);background:rgba(255,170,60,0.1);color:#ffd9a0;font-size:12px;font-weight:600;">📋 予測ログ</button>
         <button id="btn-auto-forecast" onclick="toggleAutoForecast()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,190,80,0.5);background:${autoForecastTimer?"rgba(120,220,120,0.25)":"rgba(255,170,60,0.1)"};color:#ffd9a0;font-size:12px;font-weight:600;">${autoForecastTimer?`⏱️ 自動記録ON(${AUTO_FORECAST_INTERVAL_MIN}分毎)`:"⏱️ 自動記録OFF"}</button>
       </div>
@@ -1817,12 +1820,12 @@ function renderKasen(){
           ${sorted.length===0
             ?`<tr><td colspan="14" style="text-align:center;padding:24px;color:rgba(255,255,255,0.35);font-size:13px">記録がありません。</td></tr>`
             :rows}
-          ${kwForecastResult ? `<tr><td colspan="16" style="text-align:left;padding:6px 10px;background:rgba(120,255,190,0.22);color:#a8ffcf;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,0.12);">🌊 実測雨量を基にした流量予測</td></tr>` : ""}
-          ${renderKawabouRows()}
+          ${FORECAST_DISPLAY_ENABLED && kwForecastResult ? `<tr><td colspan="16" style="text-align:left;padding:6px 10px;background:rgba(120,255,190,0.22);color:#a8ffcf;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,0.12);">🌊 実測雨量を基にした流量予測</td></tr>` : ""}
+          ${FORECAST_DISPLAY_ENABLED ? renderKawabouRows() : ""}
         </tbody>
       </table>
     </div>
-    <div class="kasen-note">※ 水位入力で流量・1h後流入量を自動計算 / 🌊実測nowcastは国交省「川の防災情報」の実測雨量を基にした1〜6h後の参考値です(将来分の雨量は0とみなす)</div>`;
+    <div class="kasen-note">※ 水位入力で流量・1h後流入量を自動計算 / 🌊実測nowcastは実測データでの個別検証が完了するまで非表示にしています(内部計算・記録は継続中)</div>`;
   applyKasenStickyHeader();
   const scrollEl = document.getElementById("kasen-scroll");
   if(scrollEl) scrollEl.scrollTop = prevScrollTop;
@@ -1922,6 +1925,10 @@ const FORECAST_TARGET_TO_SITE = {"大島":"oshima","別所橋":"bessho","板波"
 // 流量予測を何時間先まで出すか。各グループの減衰時間(最大24h)の範囲内であれば妥当。
 const FORECAST_HORIZON_H = 6;
 
+// 流量予測(実測nowcast等)の表示スイッチ。船町等で実測と乖離が大きいことが判明したため、
+// 観測所ごとの流達時間・係数を実測データで個別検証し終えるまでfalseのまま非表示にする
+// (ばぶ指示、2026-09)。内部の計算・記録(予測ログ)自体は検証データを貯めるため継続する。
+const FORECAST_DISPLAY_ENABLED = false;
 let forecastResult = null; // {times, nowIdx, byTarget:{name:[h1,h2,h3増加量]}, wetnessByGroup}
 let wnForecastResult = null; // ウェザーニュース版(Claude Codeが会話内で取得しFirebaseに保存したもの)
 let jmaForecastResult = null; // 日本気象協会(tenki.jp)版。市区町村単位のためグループ=市区町村で直接対応する
@@ -1930,6 +1937,14 @@ let jmaRainRawResult = null;  // 日本気象協会の生雨量(mm)、表示用
 let yahooRainRawResult = null; // Yahoo!天気の生雨量(mm、3時間値を1時間刻みに複製済み)、表示用
 
 // Yahoo!天気は市区町村ページを直接使う(3時間刻み予報を1時間刻みに複製した状態でFirebaseに保存)。
+// 降水予報画面の「🔄 更新」ボタン用。Firebaseに保存済みの3ソース最新値をまとめて読み直す
+// (Claude Codeによる「◯◯で予測して」の実行自体はこのボタンでは起きない。あくまで
+// 既に保存済みのデータを画面に反映するための再読み込み)。
+async function refreshKousuiAll(){
+  await Promise.all([refreshWnForecast(), refreshJmaForecast(), refreshYahooForecast()]);
+  if(screen==="kousui") renderKousui();
+}
+
 async function refreshYahooForecast(){
   try{
     const raw = await fbGet("yahooRainRaw");
