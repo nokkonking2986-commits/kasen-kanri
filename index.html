@@ -1304,11 +1304,17 @@ function reloadRadar(){
 }
 
 // ===== 降水予報(v6の表デザインを踏襲、3つの情報源×4市を比較) =====
+// 表示順・都市構成はばぶ指示で変更(2026-09): 丹波市→丹波篠山市→西脇市→三木市→加古川市。
+// 丹波篠山市・三木市は新規追加。三木市はwnStations/jmaKeyとも既存の「別所橋流域」
+// (谷上・吉川・細川、tenki.jp市区町村コード28215)をそのまま流用。丹波篠山市は
+// 既存の流量予測グループに属さない完全新規のため、専用のWN/JMA/Yahooキーを用意する。
+// 各cityにcolorを持たせ、表内で市ごとに色分けして見分けやすくする(ばぶ要望、2026-09)。
 const KOUSUI_CITIES = [
-  {name:"加古川市", wnStations:["加古川市"],                 jmaKey:"加古川市",   yahooKey:"加古川市"},
-  {name:"西脇市",   wnStations:["杉原","八千代","板波"],      jmaKey:"板波流域",   yahooKey:"西脇市"},
-  {name:"丹波市",   wnStations:["青垣","氷上","柏原","船町"], jmaKey:"船町流域",   yahooKey:"丹波市"},
-  {name:"小野市",   wnStations:["小野"],                     jmaKey:"小野大島",   yahooKey:"小野市"},
+  {name:"丹波市",     wnStations:["青垣","氷上","柏原","船町"], jmaKey:"船町流域",     yahooKey:"丹波市",     color:"#ff8a65"},
+  {name:"丹波篠山市", wnStations:["丹波篠山市"],                jmaKey:"丹波篠山市",   yahooKey:"丹波篠山市", color:"#ba68c8"},
+  {name:"西脇市",     wnStations:["杉原","八千代","板波"],      jmaKey:"板波流域",     yahooKey:"西脇市",     color:"#4db6ac"},
+  {name:"三木市",     wnStations:["谷上","吉川","細川"],        jmaKey:"別所橋流域",   yahooKey:"三木市",     color:"#dce775"},
+  {name:"加古川市",   wnStations:["加古川市"],                  jmaKey:"加古川市",     yahooKey:"加古川市",   color:"#4fc3f7"},
 ];
 const KOUSUI_HOURS = 48; // 3ソースに共通する時間数(日本気象協会の1時間天気ページが実質24〜48h程度までのため)
 
@@ -1341,17 +1347,19 @@ function renderKousui(){
   const theadHtml = `<tr><th class="kq-srccol">情報源</th>${headerCells}</tr>`;
 
   const tbodyHtml = KOUSUI_CITIES.map(city=>{
-    const cityFillerCells = `<th></th>`.repeat(KOUSUI_HOURS);
-    const cityRow = `<tr class="kq-cityrow"><th class="kq-citycol">${city.name}</th>${cityFillerCells}</tr>`;
+    const c = city.color || "#4BAED8";
+    const cityFillerCells = `<th style="border-top:6px solid ${c};background:#0d1a24"></th>`.repeat(KOUSUI_HOURS);
+    const cityRow = `<tr class="kq-cityrow"><th class="kq-citycol" style="border-top:6px solid ${c};border-left:5px solid ${c};background:#0d1a24;color:${c}">${city.name}</th>${cityFillerCells}</tr>`;
+    const srcCol = (label)=>`<td class="kq-srccol" style="border-left:5px solid ${c}">${label}</td>`;
     const wnCells = Array.from({length:KOUSUI_HOURS},(_,i)=> kqCell(kqAvg(wnStations, city.wnStations, i))).join("");
     const jmaArr = jmaGroups[city.jmaKey];
     const jmaCells = Array.from({length:KOUSUI_HOURS},(_,i)=> kqCell(jmaArr ? (jmaArr[i] ?? null) : null)).join("");
     const yahooArr = yahooCities[city.yahooKey];
     const yahooCells = Array.from({length:KOUSUI_HOURS},(_,i)=> kqCell(yahooArr ? (yahooArr[i] ?? null) : null)).join("");
     return cityRow
-      + `<tr><td class="kq-srccol">ウェザーニュース<span class="kq-srcunit">(mm)</span></td>${wnCells}</tr>`
-      + `<tr><td class="kq-srccol">日本気象協会<span class="kq-srcunit">(mm)</span></td>${jmaCells}</tr>`
-      + `<tr><td class="kq-srccol">Yahoo!天気<span class="kq-srcunit">(mm)</span></td>${yahooCells}</tr>`;
+      + `<tr>${srcCol('ウェザーニュース<span class="kq-srcunit">(mm)</span>')}${wnCells}</tr>`
+      + `<tr>${srcCol('日本気象協会<span class="kq-srcunit">(mm)</span>')}${jmaCells}</tr>`
+      + `<tr>${srcCol('Yahoo!天気<span class="kq-srcunit">(mm)</span>')}${yahooCells}</tr>`;
   }).join("");
 
   document.getElementById("main").innerHTML=`
@@ -1381,7 +1389,7 @@ function renderKousui(){
         <span><span class="kq-na">-</span> = データなし</span>
       </div>
       <div class="kq-footer">
-        出典: ウェザーニュース(weathernews.jp、緯度経度指定)／日本気象協会 tenki.jp(市区町村単位)／Yahoo!天気(市区町村単位、3時間刻みの値を1時間刻みに複製して表示)。西脇市・丹波市はグループ内の観測所平均値(ウェザーニュース)。
+        出典: ウェザーニュース(weathernews.jp、緯度経度指定)／日本気象協会 tenki.jp(市区町村単位)／Yahoo!天気(市区町村単位、3時間刻みの値を1時間刻みに複製して表示)。丹波市・西脇市・三木市はグループ内の観測所平均値(ウェザーニュース)。
       </div>
     </div>`;
 }
