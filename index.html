@@ -6,6 +6,7 @@
   <title>河川管理システム v2</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="apple-touch-icon" href="icon.png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     html{background:#0d1f2d;overflow-x:hidden;}
@@ -168,6 +169,7 @@
 .kq-footer{margin-top:16px;font-size:10px;color:rgba(255,255,255,0.35);}
 </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 </head>
 <body>
 
@@ -316,7 +318,9 @@ async function kasenAutoFetch() {
 
     kasenRows = rows;
     await fbSet("kasen", {rows: kasenRows});
-    renderKasen();
+    // 取得が完了するまでの間に別画面(倒伏履歴など)へ移動している場合があるため、
+    // 河川流量画面を見ている時だけ再描画する(ばぶ報告、2026-09)。
+    if(screen==="kasen") renderKasen();
   } finally {
     if(btn) { btn.textContent='🔄 過去2時間取得'; btn.disabled=false; }
   }
@@ -759,7 +763,7 @@ tbodyWrap.addEventListener('scroll', () => {
 function navigate(s){
   screen=s;
   document.getElementById("header-title").textContent=
-    s==="top"?"🏞️ 河川管理システム":s==="sisan"?"⚙️ 開度表示":s==="shoryo"?"📊 諸量":s==="radar"?"🌧️ 雨雲レーダー":s==="ryuiki"?"🌂 流域雨量":s==="kousui"?"🌦️ 降水予報":s==="rireki"?"📋 洪水履歴":s==="suibun"?"🗺️ 流域水文図":"🌊 河川流量";
+    s==="top"?"🏞️ 河川管理システム":s==="sisan"?"⚙️ 開度表示":s==="shoryo"?"📊 諸量":s==="radar"?"🌧️ 雨雲レーダー":s==="ryuiki"?"🌂 流域雨量":s==="kousui"?"🌦️ 降水予報":s==="rireki"?"📋 洪水履歴":s==="suibun"?"🗺️ 流域水文図":s==="toppuku_mg"?"📜 万願寺堰 倒伏履歴":s==="toppuku_bs"?"📜 別所橋堰 倒伏履歴":"🌊 河川流量";
   const navBtns=document.getElementById("nav-btns");
   navBtns.style.display=s==="top"?"none":"flex";
   if(s!=="top"){
@@ -781,6 +785,8 @@ function navigate(s){
   if(s==="ryuiki") renderRyuiki();
   if(s==="kousui") renderKousui();
   if(s==="rireki") renderRireki();
+  if(s==="toppuku_mg") renderToppuku("万願寺");
+  if(s==="toppuku_bs") renderToppuku("別所橋");
 }
 
 // ===== トップ =====
@@ -1265,42 +1271,78 @@ function reloadShoryo(){
 }
 
 // ===== 雨雲レーダー =====
+// 各雨量観測所の緯度経度(川の防災情報 https://www.river.go.jp/kawabou/pc/tm の
+// clat/clonパラメータをばぶが観測所ごとに確認して取得、2026-09)。降水予報(kousui)画面の
+// WN_STATIONSと同じ13観測所。
+const RAIN_STATION_COORDS = {
+  "青垣":   [35.2511111, 134.9733333],
+  "氷上":   [35.17591305231595, 135.00369071960452],
+  "柏原":   [35.15640709405757, 135.06729125976565],
+  "船町":   [35.059369215677975, 134.97716903686526],
+  "杉原":   [35.12243591901068, 134.93099212646487],
+  "八千代": [35.02409241738468, 134.92584228515628],
+  "板波":   [34.992597474780176, 134.9653244018555],
+  "天神":   [34.90507921085795, 135.02489089965823],
+  "北条":   [34.9275, 134.8233333],
+  "小野":   [34.853326379176615, 134.9162292480469],
+  "吉川":   [34.90620544067929, 135.10471343994143],
+  "細川":   [34.817890359674756, 135.01270294189456],
+  "谷上":   [34.763050740134055, 135.1744079589844],
+};
+let rainMapInstance = null;
+
 function renderRadar(){
-  const ts = Date.now(); // キャッシュ回避
   document.getElementById("main").innerHTML=`
     <div style="padding:8px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:15px;font-weight:700;color:#4BAED8">🌧️ 雨雲レーダー（兵庫県）</div>
-        <button onclick="reloadRadar()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);background:rgba(75,174,216,0.2);color:#fff;font-size:12px;font-weight:600;">🔄 更新</button>
+        <div style="font-size:15px;font-weight:700;color:#4BAED8">🌧️ 雨雲レーダー ＋ 雨量観測所（兵庫県）</div>
+        <button onclick="initRainMap()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);background:rgba(75,174,216,0.2);color:#fff;font-size:12px;font-weight:600;">🔄 更新</button>
       </div>
-      <div style="text-align:center" id="radar-img-wrap">
-        <img id="radar-img"
-          src="https://static.tenki.jp/static-images/radar/recent/pref-31-large.jpg?t=${ts}"
-          style="max-width:100%;border-radius:8px;border:1px solid rgba(75,174,216,0.4);display:block;margin:0 auto;"
-          onerror="this.style.display='none';document.getElementById('radar-err').style.display='block'"/>
-        <div id="radar-err" style="display:none;color:rgba(255,255,255,0.5);padding:20px;font-size:13px">
-          画像を読み込めませんでした
-        </div>
-        <div style="margin-top:10px;color:rgba(255,255,255,0.4);font-size:11px">
-          ※ 出典：tenki.jp（日本気象協会）／約5分ごとに更新
-        </div>
-        <div style="margin-top:6px">
-          <a href="https://weathernews.jp/onebox/radar/hyogo/"
-            target="_blank"
-            style="color:#4BAED8;font-size:12px">🔗 別タブで開く（拡大・操作可能）</a>
-        </div>
+      <div id="rain-map" style="height:520px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);"></div>
+      <div id="rain-map-time" style="margin-top:6px;color:rgba(255,255,255,0.4);font-size:11px">雨雲レーダー取得時刻: 読込中…</div>
+      <div style="margin-top:2px;color:rgba(255,255,255,0.4);font-size:11px">
+        ※ 観測所位置：国土交通省「川の防災情報」／雨雲レーダー：RainViewer
       </div>
     </div>`;
+  initRainMap();
 }
 
-function reloadRadar(){
-  const img = document.getElementById("radar-img");
-  const err = document.getElementById("radar-err");
-  if(!img) return;
-  err.style.display="none";
-  img.style.display="block";
-  img.style.margin="0 auto";
-  img.src = "https://static.tenki.jp/static-images/radar/recent/pref-31-large.jpg?t="+Date.now();
+// RainViewerのタイルはズームレベル7までしか実データが無く、8以上を直接リクエストすると
+// 「Zoom Level Not Supported」という文字だけの画像が返ってくる(ばぶ報告、2026-09。
+// 最初8に設定したが解消せず、RainViewer側の実際の上限は7だった)。
+// maxNativeZoomを7に制限し、それ以上はLeafletにズーム7のタイルを拡大表示させることで回避する。
+const RADAR_MAX_NATIVE_ZOOM = 7;
+
+async function initRainMap(){
+  const el = document.getElementById("rain-map");
+  if(!el || typeof L === "undefined") return;
+  if(rainMapInstance){ rainMapInstance.remove(); rainMapInstance = null; }
+  rainMapInstance = L.map(el).setView([35.0, 134.98], 9);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(rainMapInstance);
+  Object.entries(RAIN_STATION_COORDS).forEach(([name, latlon])=>{
+    L.marker(latlon).addTo(rainMapInstance).bindPopup(`🌧️ ${name}`);
+  });
+  // 雨雲レーダーをタイルとして地図に重ねる(RainViewer公開API、認証不要、約10分ごとに更新)。
+  // OSM地図は正確な緯度経度を持つため、tenki.jpの静止画と違って観測所ピンとズレなく重なる。
+  try{
+    const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+    const data = await res.json();
+    const frames = data?.radar?.past || [];
+    const latest = frames[frames.length-1];
+    if(latest){
+      const note = document.getElementById("rain-map-time");
+      if(note) note.textContent = "雨雲レーダー取得時刻: " + new Date(latest.time*1000).toLocaleString("ja-JP");
+      L.tileLayer(`${data.host}${latest.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+        opacity: 0.55,
+        maxNativeZoom: RADAR_MAX_NATIVE_ZOOM,
+        maxZoom: 18,
+        attribution: "Radar: RainViewer",
+      }).addTo(rainMapInstance);
+    }
+  }catch(e){ console.error("RainViewer取得失敗:", e); }
 }
 
 // ===== 降水予報(v6の表デザインを踏襲、3つの情報源×4市を比較) =====
@@ -1794,6 +1836,8 @@ function renderKasen(){
       <div class="kasen-title">🌊 河川流量</div>
       <div style="display:flex;gap:8px">
         <button onclick="kasenAutoFetch()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.12);color:#a8dfff;font-size:12px;font-weight:600;">🔄 更新</button>
+        <button onclick="navigate('toppuku_mg')" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,140,140,0.5);background:rgba(255,90,90,0.1);color:#ffb3b3;font-size:12px;font-weight:600;">📜 万願寺倒伏履歴</button>
+        <button onclick="navigate('toppuku_bs')" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,140,140,0.5);background:rgba(255,90,90,0.1);color:#ffb3b3;font-size:12px;font-weight:600;">📜 別所橋倒伏履歴</button>
         <button onclick="downloadForecastLog()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,190,80,0.5);background:rgba(255,170,60,0.1);color:#ffd9a0;font-size:12px;font-weight:600;">📋 予測ログ</button>
         <button id="btn-auto-forecast" onclick="toggleAutoForecast()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,190,80,0.5);background:${autoForecastTimer?"rgba(120,220,120,0.25)":"rgba(255,170,60,0.1)"};color:#ffd9a0;font-size:12px;font-weight:600;">${autoForecastTimer?`⏱️ 自動記録ON(${AUTO_FORECAST_INTERVAL_MIN}分毎)`:"⏱️ 自動記録OFF"}</button>
       </div>
@@ -2358,6 +2402,42 @@ function renderKawabouRows(){
   }).join("");
 }
 
+// ===== 堰倒伏履歴(万願寺・別所橋) =====
+// find_gate_topple_final.pyの条件(急増後に一旦上がりきってから下がる、万願寺は流量一桁台からの急増のみ)で
+// 洪水履歴52件から抽出した確定リスト(ばぶ確認済み、2026-09)。開始60分前〜3時間分(18行、10分刻み)。
+const GATE_TOPPLE_DATA = {"万願寺":[{"event":"R2(2020)07.25","start":"07/25 04:50","rows":[{"elapsed":0,"date":"07/25","level":1.29,"flow":8.3},{"elapsed":10,"date":"07/25","level":1.32,"flow":9.6},{"elapsed":20,"date":"07/25","level":1.36,"flow":11.4},{"elapsed":30,"date":"07/25","level":1.39,"flow":12.9},{"elapsed":40,"date":"07/25","level":1.83,"flow":45.6},{"elapsed":50,"date":"07/25","level":2.13,"flow":79.4},{"elapsed":60,"date":"07/25","level":2.21,"flow":90.0},{"elapsed":70,"date":"07/25","level":2.21,"flow":90.0},{"elapsed":80,"date":"07/25","level":2.14,"flow":80.7},{"elapsed":90,"date":"07/25","level":2.04,"flow":68.3},{"elapsed":100,"date":"07/25","level":1.96,"flow":59.1},{"elapsed":110,"date":"07/25","level":1.89,"flow":51.6},{"elapsed":120,"date":"07/25","level":1.83,"flow":45.6},{"elapsed":130,"date":"07/25","level":1.79,"flow":41.8},{"elapsed":140,"date":"07/25","level":1.76,"flow":39.1},{"elapsed":150,"date":"07/25","level":1.74,"flow":37.3},{"elapsed":160,"date":"07/25","level":1.72,"flow":35.6},{"elapsed":170,"date":"07/25","level":1.7,"flow":33.9}]},{"event":"R3(2021)08.13","start":"08/12 05:00","rows":[{"elapsed":0,"date":"08/12","level":1.01,"flow":0.7},{"elapsed":10,"date":"08/12","level":1.01,"flow":0.7},{"elapsed":20,"date":"08/12","level":1.02,"flow":0.9},{"elapsed":30,"date":"08/12","level":1.03,"flow":1.0},{"elapsed":40,"date":"08/12","level":1.39,"flow":12.9},{"elapsed":50,"date":"08/12","level":2.02,"flow":66.0},{"elapsed":60,"date":"08/12","level":2.15,"flow":82.0},{"elapsed":70,"date":"08/12","level":2.18,"flow":86.0},{"elapsed":80,"date":"08/12","level":2.13,"flow":79.4},{"elapsed":90,"date":"08/12","level":2.05,"flow":69.5},{"elapsed":100,"date":"08/12","level":1.97,"flow":60.2},{"elapsed":110,"date":"08/12","level":1.87,"flow":49.6},{"elapsed":120,"date":"08/12","level":1.79,"flow":41.8},{"elapsed":130,"date":"08/12","level":1.72,"flow":35.6},{"elapsed":140,"date":"08/12","level":1.67,"flow":31.4},{"elapsed":150,"date":"08/12","level":1.62,"flow":27.5},{"elapsed":160,"date":"08/12","level":1.58,"flow":24.6},{"elapsed":170,"date":"08/12","level":1.55,"flow":22.5}]},{"event":"R4(2022)07.19","start":"07/19 04:50","rows":[{"elapsed":0,"date":"07/19","level":1.18,"flow":4.3},{"elapsed":10,"date":"07/19","level":1.23,"flow":6.0},{"elapsed":20,"date":"07/19","level":1.3,"flow":8.7},{"elapsed":30,"date":"07/19","level":1.36,"flow":11.4},{"elapsed":40,"date":"07/19","level":1.53,"flow":21.2},{"elapsed":50,"date":"07/19","level":1.92,"flow":54.8},{"elapsed":60,"date":"07/19","level":2.23,"flow":92.7},{"elapsed":70,"date":"07/19","level":2.31,"flow":104.2},{"elapsed":80,"date":"07/19","level":2.29,"flow":101.2},{"elapsed":90,"date":"07/19","level":2.24,"flow":94.1},{"elapsed":100,"date":"07/19","level":2.16,"flow":83.3},{"elapsed":110,"date":"07/19","level":2.09,"flow":74.4},{"elapsed":120,"date":"07/19","level":2.03,"flow":67.1},{"elapsed":130,"date":"07/19","level":1.99,"flow":62.5},{"elapsed":140,"date":"07/19","level":1.95,"flow":58.0},{"elapsed":150,"date":"07/19","level":1.93,"flow":55.9},{"elapsed":160,"date":"07/19","level":1.9,"flow":52.7},{"elapsed":170,"date":"07/19","level":1.89,"flow":51.6}]},{"event":"R4(2022)07.19","start":"07/22 01:30","rows":[{"elapsed":0,"date":"07/22","level":1.17,"flow":4.0},{"elapsed":10,"date":"07/22","level":1.2,"flow":5.0},{"elapsed":20,"date":"07/22","level":1.24,"flow":6.3},{"elapsed":30,"date":"07/22","level":1.33,"flow":10.0},{"elapsed":40,"date":"07/22","level":1.66,"flow":30.6},{"elapsed":50,"date":"07/22","level":2.06,"flow":70.7},{"elapsed":60,"date":"07/22","level":2.25,"flow":95.5},{"elapsed":70,"date":"07/22","level":2.29,"flow":101.2},{"elapsed":80,"date":"07/22","level":2.27,"flow":98.4},{"elapsed":90,"date":"07/22","level":2.22,"flow":91.4},{"elapsed":100,"date":"07/22","level":2.17,"flow":84.6},{"elapsed":110,"date":"07/22","level":2.12,"flow":78.1},{"elapsed":120,"date":"07/22","level":2.08,"flow":73.1},{"elapsed":130,"date":"07/22","level":2.03,"flow":67.1},{"elapsed":140,"date":"07/22","level":1.99,"flow":62.5},{"elapsed":150,"date":"07/22","level":1.96,"flow":59.1},{"elapsed":160,"date":"07/22","level":1.92,"flow":54.8},{"elapsed":170,"date":"07/22","level":1.88,"flow":50.6}]},{"event":"R4(2022)09.01(未放流)","start":"09/01 15:50","rows":[{"elapsed":0,"date":"09/01","level":0.95,"flow":0.2},{"elapsed":10,"date":"09/01","level":0.96,"flow":0.2},{"elapsed":20,"date":"09/01","level":0.97,"flow":0.3},{"elapsed":30,"date":"09/01","level":1.04,"flow":1.2},{"elapsed":40,"date":"09/01","level":1.42,"flow":14.5},{"elapsed":50,"date":"09/01","level":1.88,"flow":50.6},{"elapsed":60,"date":"09/01","level":2.55,"flow":142.3},{"elapsed":70,"date":"09/01","level":2.78,"flow":184.5},{"elapsed":80,"date":"09/01","level":2.81,"flow":190.4},{"elapsed":90,"date":"09/01","level":2.77,"flow":182.6},{"elapsed":100,"date":"09/01","level":2.71,"flow":171.1},{"elapsed":110,"date":"09/01","level":2.66,"flow":161.8},{"elapsed":120,"date":"09/01","level":2.63,"flow":156.4},{"elapsed":130,"date":"09/01","level":2.58,"flow":147.5},{"elapsed":140,"date":"09/01","level":2.53,"flow":138.9},{"elapsed":150,"date":"09/01","level":2.48,"flow":130.6},{"elapsed":160,"date":"09/01","level":2.43,"flow":122.5},{"elapsed":170,"date":"09/01","level":2.38,"flow":114.7}]},{"event":"R5(2023)06.02","start":"06/02 00:10","rows":[{"elapsed":0,"date":"06/01","level":1.3,"flow":8.7},{"elapsed":10,"date":"06/01","level":1.35,"flow":10.9},{"elapsed":20,"date":"06/01","level":1.41,"flow":14.0},{"elapsed":30,"date":"06/01","level":1.49,"flow":18.6},{"elapsed":40,"date":"06/01","level":1.63,"flow":28.3},{"elapsed":50,"date":"06/02","level":1.92,"flow":54.8},{"elapsed":60,"date":"06/02","level":2.21,"flow":90.0},{"elapsed":70,"date":"06/02","level":2.27,"flow":98.4},{"elapsed":80,"date":"06/02","level":2.24,"flow":94.1},{"elapsed":90,"date":"06/02","level":2.19,"flow":87.3},{"elapsed":100,"date":"06/02","level":2.14,"flow":80.7},{"elapsed":110,"date":"06/02","level":2.09,"flow":74.4},{"elapsed":120,"date":"06/02","level":2.04,"flow":68.3},{"elapsed":130,"date":"06/02","level":2.0,"flow":63.6},{"elapsed":140,"date":"06/02","level":1.96,"flow":59.1},{"elapsed":150,"date":"06/02","level":1.93,"flow":55.9},{"elapsed":160,"date":"06/02","level":1.9,"flow":52.7},{"elapsed":170,"date":"06/02","level":1.87,"flow":49.6}]}],"別所橋":[{"event":"H30(2018)07.04","start":"07/04 11:20","rows":[{"elapsed":0,"date":"07/04","level":0.43,"flow":28.2},{"elapsed":10,"date":"07/04","level":0.43,"flow":28.2},{"elapsed":20,"date":"07/04","level":0.44,"flow":29.4},{"elapsed":30,"date":"07/04","level":0.45,"flow":30.7},{"elapsed":40,"date":"07/04","level":0.46,"flow":32.0},{"elapsed":50,"date":"07/04","level":0.56,"flow":46.4},{"elapsed":60,"date":"07/04","level":0.94,"flow":125.4},{"elapsed":70,"date":"07/04","level":0.78,"flow":87.4},{"elapsed":80,"date":"07/04","level":0.65,"flow":61.6},{"elapsed":90,"date":"07/04","level":0.6,"flow":52.9},{"elapsed":100,"date":"07/04","level":0.57,"flow":48.0},{"elapsed":110,"date":"07/04","level":0.56,"flow":46.4},{"elapsed":120,"date":"07/04","level":0.56,"flow":46.4},{"elapsed":130,"date":"07/04","level":0.55,"flow":44.8},{"elapsed":140,"date":"07/04","level":0.55,"flow":44.8},{"elapsed":150,"date":"07/04","level":0.55,"flow":44.8},{"elapsed":160,"date":"07/04","level":0.54,"flow":43.3},{"elapsed":170,"date":"07/04","level":0.54,"flow":43.3}]},{"event":"H30(2018)09.08","start":"09/08 02:00","rows":[{"elapsed":0,"date":"09/08","level":0.3,"flow":15.6},{"elapsed":10,"date":"09/08","level":0.31,"flow":16.4},{"elapsed":20,"date":"09/08","level":0.32,"flow":17.1},{"elapsed":30,"date":"09/08","level":0.33,"flow":17.9},{"elapsed":40,"date":"09/08","level":0.34,"flow":18.7},{"elapsed":50,"date":"09/08","level":0.52,"flow":40.3},{"elapsed":60,"date":"09/08","level":0.94,"flow":125.4},{"elapsed":70,"date":"09/08","level":0.81,"flow":94.0},{"elapsed":80,"date":"09/08","level":0.72,"flow":75.0},{"elapsed":90,"date":"09/08","level":0.68,"flow":67.2},{"elapsed":100,"date":"09/08","level":0.67,"flow":65.3},{"elapsed":110,"date":"09/08","level":0.66,"flow":63.4},{"elapsed":120,"date":"09/08","level":0.65,"flow":61.6},{"elapsed":130,"date":"09/08","level":0.65,"flow":61.6},{"elapsed":140,"date":"09/08","level":0.66,"flow":63.4},{"elapsed":150,"date":"09/08","level":0.66,"flow":63.4},{"elapsed":160,"date":"09/08","level":0.67,"flow":65.3},{"elapsed":170,"date":"09/08","level":0.67,"flow":65.3}]},{"event":"R2(2020)09.25(未放流)","start":"09/25 10:40","rows":[{"elapsed":0,"date":"09/25","level":0.41,"flow":34.3},{"elapsed":10,"date":"09/25","level":0.42,"flow":35.7},{"elapsed":20,"date":"09/25","level":0.43,"flow":37.1},{"elapsed":30,"date":"09/25","level":0.43,"flow":37.1},{"elapsed":40,"date":"09/25","level":0.44,"flow":38.6},{"elapsed":50,"date":"09/25","level":0.46,"flow":41.5},{"elapsed":60,"date":"09/25","level":0.85,"flow":121.3},{"elapsed":70,"date":"09/25","level":0.8,"flow":108.7},{"elapsed":80,"date":"09/25","level":0.68,"flow":81.4},{"elapsed":90,"date":"09/25","level":0.62,"flow":69.2},{"elapsed":100,"date":"09/25","level":0.6,"flow":65.3},{"elapsed":110,"date":"09/25","level":0.6,"flow":65.3},{"elapsed":120,"date":"09/25","level":0.6,"flow":65.3},{"elapsed":130,"date":"09/25","level":0.6,"flow":65.3},{"elapsed":140,"date":"09/25","level":0.62,"flow":69.2},{"elapsed":150,"date":"09/25","level":0.63,"flow":71.2},{"elapsed":160,"date":"09/25","level":0.64,"flow":73.2},{"elapsed":170,"date":"09/25","level":0.64,"flow":73.2}]},{"event":"R3(2021)05.21","start":"05/20 21:30","rows":[{"elapsed":0,"date":"05/20","level":0.43,"flow":37.1},{"elapsed":10,"date":"05/20","level":0.45,"flow":40.0},{"elapsed":20,"date":"05/20","level":0.46,"flow":41.5},{"elapsed":30,"date":"05/20","level":0.48,"flow":44.6},{"elapsed":40,"date":"05/20","level":0.49,"flow":46.2},{"elapsed":50,"date":"05/20","level":0.69,"flow":83.5},{"elapsed":60,"date":"05/20","level":0.99,"flow":160.1},{"elapsed":70,"date":"05/20","level":0.8,"flow":108.7},{"elapsed":80,"date":"05/20","level":0.68,"flow":81.4},{"elapsed":90,"date":"05/20","level":0.63,"flow":71.2},{"elapsed":100,"date":"05/20","level":0.62,"flow":69.2},{"elapsed":110,"date":"05/20","level":0.61,"flow":67.3},{"elapsed":120,"date":"05/20","level":0.62,"flow":69.2},{"elapsed":130,"date":"05/20","level":0.63,"flow":71.2},{"elapsed":140,"date":"05/20","level":0.66,"flow":77.2},{"elapsed":150,"date":"05/20","level":0.67,"flow":79.3},{"elapsed":160,"date":"05/20","level":0.69,"flow":83.5},{"elapsed":170,"date":"05/20","level":0.7,"flow":85.7}]},{"event":"R3(2021)07.07","start":"07/07 11:30","rows":[{"elapsed":0,"date":"07/07","level":0.48,"flow":44.6},{"elapsed":10,"date":"07/07","level":0.49,"flow":46.2},{"elapsed":20,"date":"07/07","level":0.47,"flow":43.0},{"elapsed":30,"date":"07/07","level":0.44,"flow":38.6},{"elapsed":40,"date":"07/07","level":0.43,"flow":37.1},{"elapsed":50,"date":"07/07","level":0.44,"flow":38.6},{"elapsed":60,"date":"07/07","level":0.93,"flow":142.8},{"elapsed":70,"date":"07/07","level":0.85,"flow":121.3},{"elapsed":80,"date":"07/07","level":0.68,"flow":81.4},{"elapsed":90,"date":"07/07","level":0.62,"flow":69.2},{"elapsed":100,"date":"07/07","level":0.61,"flow":67.3},{"elapsed":110,"date":"07/07","level":0.59,"flow":63.5},{"elapsed":120,"date":"07/07","level":0.58,"flow":61.6},{"elapsed":130,"date":"07/07","level":0.57,"flow":59.8},{"elapsed":140,"date":"07/07","level":0.58,"flow":61.6},{"elapsed":150,"date":"07/07","level":0.59,"flow":63.5},{"elapsed":160,"date":"07/07","level":0.6,"flow":65.3},{"elapsed":170,"date":"07/07","level":0.62,"flow":69.2}]},{"event":"R3(2021)08.03(未放流)","start":"08/03 08:00","rows":[{"elapsed":0,"date":"08/03","level":0.1,"flow":5.0},{"elapsed":10,"date":"08/03","level":0.16,"flow":8.6},{"elapsed":20,"date":"08/03","level":0.3,"flow":20.9},{"elapsed":30,"date":"08/03","level":0.48,"flow":44.6},{"elapsed":40,"date":"08/03","level":0.59,"flow":63.5},{"elapsed":50,"date":"08/03","level":1.13,"flow":204.3},{"elapsed":60,"date":"08/03","level":0.97,"flow":154.2},{"elapsed":70,"date":"08/03","level":0.85,"flow":121.3},{"elapsed":80,"date":"08/03","level":0.9,"flow":134.5},{"elapsed":90,"date":"08/03","level":0.97,"flow":154.2},{"elapsed":100,"date":"08/03","level":1.0,"flow":163.1},{"elapsed":110,"date":"08/03","level":0.99,"flow":160.1},{"elapsed":120,"date":"08/03","level":0.97,"flow":154.2},{"elapsed":130,"date":"08/03","level":0.95,"flow":148.5},{"elapsed":140,"date":"08/03","level":0.92,"flow":140.0},{"elapsed":150,"date":"08/03","level":0.89,"flow":131.8},{"elapsed":160,"date":"08/03","level":0.86,"flow":123.9},{"elapsed":170,"date":"08/03","level":0.83,"flow":116.2}]},{"event":"R3(2021)09.02(未放流)","start":"09/03 15:30","rows":[{"elapsed":0,"date":"09/03","level":0.43,"flow":37.1},{"elapsed":10,"date":"09/03","level":0.43,"flow":37.1},{"elapsed":20,"date":"09/03","level":0.43,"flow":37.1},{"elapsed":30,"date":"09/03","level":0.43,"flow":37.1},{"elapsed":40,"date":"09/03","level":0.44,"flow":38.6},{"elapsed":50,"date":"09/03","level":0.48,"flow":44.6},{"elapsed":60,"date":"09/03","level":0.98,"flow":157.2},{"elapsed":70,"date":"09/03","level":0.82,"flow":113.7},{"elapsed":80,"date":"09/03","level":0.65,"flow":75.2},{"elapsed":90,"date":"09/03","level":0.56,"flow":58.0},{"elapsed":100,"date":"09/03","level":0.52,"flow":51.1},{"elapsed":110,"date":"09/03","level":0.5,"flow":47.8},{"elapsed":120,"date":"09/03","level":0.49,"flow":46.2},{"elapsed":130,"date":"09/03","level":0.48,"flow":44.6},{"elapsed":140,"date":"09/03","level":0.47,"flow":43.0},{"elapsed":150,"date":"09/03","level":0.47,"flow":43.0},{"elapsed":160,"date":"09/03","level":0.47,"flow":43.0},{"elapsed":170,"date":"09/03","level":0.47,"flow":43.0}]},{"event":"R4(2022)07.19","start":"07/19 08:30","rows":[{"elapsed":0,"date":"07/19","level":0.41,"flow":34.3},{"elapsed":10,"date":"07/19","level":0.39,"flow":31.6},{"elapsed":20,"date":"07/19","level":0.39,"flow":31.6},{"elapsed":30,"date":"07/19","level":0.39,"flow":31.6},{"elapsed":40,"date":"07/19","level":0.39,"flow":31.6},{"elapsed":50,"date":"07/19","level":0.42,"flow":35.7},{"elapsed":60,"date":"07/19","level":0.88,"flow":129.2},{"elapsed":70,"date":"07/19","level":0.8,"flow":108.7},{"elapsed":80,"date":"07/19","level":0.62,"flow":69.2},{"elapsed":90,"date":"07/19","level":0.53,"flow":52.8},{"elapsed":100,"date":"07/19","level":0.48,"flow":44.6},{"elapsed":110,"date":"07/19","level":0.45,"flow":40.0},{"elapsed":120,"date":"07/19","level":0.43,"flow":37.1},{"elapsed":130,"date":"07/19","level":0.42,"flow":35.7},{"elapsed":140,"date":"07/19","level":0.41,"flow":34.3},{"elapsed":150,"date":"07/19","level":0.4,"flow":33.0},{"elapsed":160,"date":"07/19","level":0.4,"flow":33.0},{"elapsed":170,"date":"07/19","level":0.41,"flow":34.3}]},{"event":"R4(2022)10.09(未放流)","start":"10/09 21:50","rows":[{"elapsed":0,"date":"10/09","level":0.36,"flow":27.8},{"elapsed":10,"date":"10/09","level":0.35,"flow":26.6},{"elapsed":20,"date":"10/09","level":0.36,"flow":27.8},{"elapsed":30,"date":"10/09","level":0.38,"flow":30.3},{"elapsed":40,"date":"10/09","level":0.41,"flow":34.3},{"elapsed":50,"date":"10/09","level":0.5,"flow":47.8},{"elapsed":60,"date":"10/09","level":0.94,"flow":145.6},{"elapsed":70,"date":"10/09","level":0.8,"flow":108.7},{"elapsed":80,"date":"10/09","level":0.66,"flow":77.2},{"elapsed":90,"date":"10/09","level":0.61,"flow":67.3},{"elapsed":100,"date":"10/09","level":0.6,"flow":65.3},{"elapsed":110,"date":"10/09","level":0.59,"flow":63.5},{"elapsed":120,"date":"10/09","level":0.59,"flow":63.5},{"elapsed":130,"date":"10/09","level":0.59,"flow":63.5},{"elapsed":140,"date":"10/09","level":0.6,"flow":65.3},{"elapsed":150,"date":"10/09","level":0.61,"flow":67.3},{"elapsed":160,"date":"10/09","level":0.61,"flow":67.3},{"elapsed":170,"date":"10/09","level":0.62,"flow":69.2}]},{"event":"R5(2023)08.23(新規)","start":"08/26 20:50","rows":[{"elapsed":0,"date":"08/26","level":0.23,"flow":14.1},{"elapsed":10,"date":"08/26","level":0.32,"flow":23.1},{"elapsed":20,"date":"08/26","level":0.36,"flow":27.8},{"elapsed":30,"date":"08/26","level":0.37,"flow":29.1},{"elapsed":40,"date":"08/26","level":0.47,"flow":43.0},{"elapsed":50,"date":"08/26","level":0.56,"flow":58.0},{"elapsed":60,"date":"08/26","level":0.83,"flow":116.2},{"elapsed":70,"date":"08/26","level":0.85,"flow":121.3},{"elapsed":80,"date":"08/26","level":0.85,"flow":121.3},{"elapsed":90,"date":"08/26","level":0.77,"flow":101.5},{"elapsed":100,"date":"08/26","level":0.67,"flow":79.3},{"elapsed":110,"date":"08/26","level":0.6,"flow":65.3},{"elapsed":120,"date":"08/26","level":0.54,"flow":54.5},{"elapsed":130,"date":"08/26","level":0.5,"flow":47.8},{"elapsed":140,"date":"08/26","level":0.47,"flow":43.0},{"elapsed":150,"date":"08/26","level":0.45,"flow":40.0},{"elapsed":160,"date":"08/26","level":0.43,"flow":37.1},{"elapsed":170,"date":"08/26","level":0.42,"flow":35.7}]}]};
+
+function renderToppuku(site){
+  const items = GATE_TOPPLE_DATA[site] || [];
+  const color = site==="万願寺" ? "#ffb3b3" : "#ffd9a0";
+  const cards = items.map(item=>{
+    const rows = item.rows.map((r,i)=>{
+      const prevDate = i>0 ? item.rows[i-1].date : null;
+      const isBreak = prevDate!==null && prevDate!==r.date;
+      const label = `+${r.elapsed}分`+(isBreak?`（${r.date}）`:"");
+      return `<tr style="${isBreak?'border-top:2px solid rgba(255,255,255,0.5);':''}">
+        <td style="padding:3px 6px;color:rgba(255,255,255,0.85);font-weight:${isBreak?700:400}">${label}</td>
+        <td style="padding:3px 6px;text-align:right;color:#fff">${r.level??"―"}</td>
+        <td style="padding:3px 6px;text-align:right;color:#a8dfff">${r.flow??"―"}</td>
+      </tr>`;
+    }).join("");
+    return `<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:8px 10px;min-width:220px">
+      <div style="font-weight:700;color:${color};font-size:13px;margin-bottom:4px">${item.event}　開始:${item.start}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:rgba(255,255,255,0.6)"><th style="text-align:left;padding:3px 6px">経過</th><th style="text-align:right;padding:3px 6px">水位(m)</th><th style="text-align:right;padding:3px 6px">流量(m³/s)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join("");
+  document.getElementById("main").innerHTML=`
+    <div class="kasen-header">
+      <div class="kasen-title">📜 ${site}堰 倒伏履歴（${items.length}件）</div>
+      <button onclick="navigate('kasen')" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.12);color:#a8dfff;font-size:12px;font-weight:600;">← 河川流量へ戻る</button>
+    </div>
+    <div style="padding:4px 2px 20px;display:flex;flex-wrap:wrap;gap:12px">${cards || '<div style="color:rgba(255,255,255,0.4);padding:20px">データがありません。</div>'}</div>
+  `;
+}
+
 // Open-Meteo・ウェザーニュース・日本気象協会・kawabou実測をまとめて更新する(ボタン一本化)。
 // いずれもFirebaseに保存済みの最新値を読むだけなので、まとめて呼んでも軽い。
 async function refreshAllForecasts(){
@@ -2460,7 +2540,7 @@ function updateFlowCells(){
 async function kasenDel(id){
   kasenRows=kasenRows.filter(r=>r.id!==id);
   await fbSet("kasen",{rows:kasenRows});
-  renderKasen();
+  if(screen==="kasen") renderKasen();
 }
 async function kasenAdd(){
   const sorted=[...kasenRows].sort((a,b)=>toNum(a)-toNum(b));
@@ -2494,7 +2574,7 @@ async function kasenAdd(){
   }
   kasenRows=[...kasenRows,nr];
   await fbSet("kasen",{rows:kasenRows});
-  renderKasen();
+  if(screen==="kasen") renderKasen();
 }
 async function downloadSisanExcel(){
   const histData = await fbGet("sisan_hist");
@@ -2548,7 +2628,7 @@ async function kasenClear(){
   if(!confirm("全履歴を削除しますか？\nこの操作は元に戻せません。"))return;
   kasenRows=[];
   await fbSet("kasen",{rows:[]});
-  renderKasen();
+  if(screen==="kasen") renderKasen();
 }
 
 
