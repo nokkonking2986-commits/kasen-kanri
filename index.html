@@ -1290,13 +1290,18 @@ const RAIN_STATION_COORDS = {
   "谷上":   [34.763050740134055, 135.1744079589844],
 };
 let rainMapInstance = null;
+let rainPinLayer = null;
+let rainPinsVisible = true;
 
 function renderRadar(){
   document.getElementById("main").innerHTML=`
     <div style="padding:8px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-size:15px;font-weight:700;color:#4BAED8">🌧️ 雨雲レーダー ＋ 雨量観測所（兵庫県）</div>
-        <button onclick="initRainMap()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);background:rgba(75,174,216,0.2);color:#fff;font-size:12px;font-weight:600;">🔄 更新</button>
+        <div style="display:flex;gap:8px">
+          <button id="btn-toggle-pins" onclick="toggleRainPins()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);background:rgba(75,174,216,0.2);color:#fff;font-size:12px;font-weight:600;">📍 ピン非表示</button>
+          <button onclick="initRainMap()" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);background:rgba(75,174,216,0.2);color:#fff;font-size:12px;font-weight:600;">🔄 更新</button>
+        </div>
       </div>
       <div id="rain-map" style="height:520px;border-radius:8px;border:1px solid rgba(75,174,216,0.4);"></div>
       <div id="rain-map-time" style="margin-top:6px;color:rgba(255,255,255,0.4);font-size:11px">雨雲レーダー取得時刻: 読込中…</div>
@@ -1322,9 +1327,10 @@ async function initRainMap(){
     maxZoom: 18,
     attribution: "&copy; OpenStreetMap contributors",
   }).addTo(rainMapInstance);
-  Object.entries(RAIN_STATION_COORDS).forEach(([name, latlon])=>{
-    L.marker(latlon).addTo(rainMapInstance).bindPopup(`🌧️ ${name}`);
-  });
+  rainPinLayer = L.layerGroup(
+    Object.entries(RAIN_STATION_COORDS).map(([name, latlon])=> L.marker(latlon).bindPopup(`🌧️ ${name}`))
+  );
+  if(rainPinsVisible) rainPinLayer.addTo(rainMapInstance);
   // 雨雲レーダーをタイルとして地図に重ねる(RainViewer公開API、認証不要、約10分ごとに更新)。
   // OSM地図は正確な緯度経度を持つため、tenki.jpの静止画と違って観測所ピンとズレなく重なる。
   try{
@@ -1343,6 +1349,15 @@ async function initRainMap(){
       }).addTo(rainMapInstance);
     }
   }catch(e){ console.error("RainViewer取得失敗:", e); }
+}
+
+function toggleRainPins(){
+  if(!rainMapInstance || !rainPinLayer) return;
+  rainPinsVisible = !rainPinsVisible;
+  if(rainPinsVisible) rainPinLayer.addTo(rainMapInstance);
+  else rainMapInstance.removeLayer(rainPinLayer);
+  const btn = document.getElementById("btn-toggle-pins");
+  if(btn) btn.textContent = rainPinsVisible ? "📍 ピン非表示" : "📍 ピン表示";
 }
 
 // ===== 降水予報(v6の表デザインを踏襲、3つの情報源×4市を比較) =====
