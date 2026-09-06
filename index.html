@@ -2410,6 +2410,8 @@ const GATE_TOPPLE_DATA = {"万願寺":[{"event":"R2(2020)07.25","start":"07/25 0
 function renderToppuku(site){
   const items = GATE_TOPPLE_DATA[site] || [];
   const color = site==="万願寺" ? "#ffb3b3" : "#ffd9a0";
+  const otherSite = site==="万願寺" ? "別所橋" : "万願寺";
+  const otherScreen = site==="万願寺" ? "toppuku_bs" : "toppuku_mg";
   const cards = items.map(item=>{
     const rows = item.rows.map((r,i)=>{
       const prevDate = i>0 ? item.rows[i-1].date : null;
@@ -2432,7 +2434,10 @@ function renderToppuku(site){
   document.getElementById("main").innerHTML=`
     <div class="kasen-header">
       <div class="kasen-title">📜 ${site}堰 倒伏履歴（${items.length}件）</div>
-      <button onclick="navigate('kasen')" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.12);color:#a8dfff;font-size:12px;font-weight:600;">← 河川流量へ戻る</button>
+      <div style="display:flex;gap:8px">
+        <button onclick="navigate('${otherScreen}')" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(255,140,140,0.5);background:rgba(255,90,90,0.1);color:#ffb3b3;font-size:12px;font-weight:600;">📜 ${otherSite}倒伏履歴へ</button>
+        <button onclick="navigate('kasen')" style="padding:7px 14px;border-radius:8px;border:1px solid rgba(75,174,216,0.5);background:rgba(75,174,216,0.12);color:#a8dfff;font-size:12px;font-weight:600;">← 河川流量へ戻る</button>
+      </div>
     </div>
     <div style="padding:4px 2px 20px;display:flex;flex-wrap:wrap;gap:12px">${cards || '<div style="color:rgba(255,255,255,0.4);padding:20px">データがありません。</div>'}</div>
   `;
