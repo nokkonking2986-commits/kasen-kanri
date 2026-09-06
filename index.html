@@ -1323,9 +1323,13 @@ async function initRainMap(){
   if(!el || typeof L === "undefined") return;
   if(rainMapInstance){ rainMapInstance.remove(); rainMapInstance = null; }
   rainMapInstance = L.map(el).setView([35.0, 134.98], 9);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18,
-    attribution: "&copy; OpenStreetMap contributors",
+  // 背景地図は道路・施設名などの情報量が多いOSM標準タイルだと雨雲が埋もれて見えづらい
+  // (ばぶ報告、2026-09)。CartoDBの無料タイルはAPIキー登録が必須になっており
+  // 「API KEY REQUIRED」の透かしが出てしまった(ばぶ報告)ため、キー不要で地味な配色の
+  // Esri World Light Grayに変更。
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 16,
+    attribution: "&copy; Esri",
   }).addTo(rainMapInstance);
   rainPinLayer = L.layerGroup(
     Object.entries(RAIN_STATION_COORDS).map(([name, latlon])=> L.marker(latlon).bindPopup(`🌧️ ${name}`))
@@ -1341,8 +1345,10 @@ async function initRainMap(){
     if(latest){
       const note = document.getElementById("rain-map-time");
       if(note) note.textContent = "雨雲レーダー取得時刻: " + new Date(latest.time*1000).toLocaleString("ja-JP");
-      L.tileLayer(`${data.host}${latest.path}/256/{z}/{x}/{y}/2/1_1.png`, {
-        opacity: 0.55,
+      // colorスキームを2(Universal Blue、薄い)から6(NEXRADベース、濃い緑〜赤)に変更し、
+      // 不透明度も0.55→0.8に上げて視認性を上げる(ばぶ報告、2026-09)。
+      L.tileLayer(`${data.host}${latest.path}/256/{z}/{x}/{y}/6/1_1.png`, {
+        opacity: 0.8,
         maxNativeZoom: RADAR_MAX_NATIVE_ZOOM,
         maxZoom: 18,
         attribution: "Radar: RainViewer",
