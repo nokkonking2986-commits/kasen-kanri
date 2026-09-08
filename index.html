@@ -906,6 +906,16 @@ function latestVal(obj){
   return null;
 }
 
+// 最新値の1つ前(10分前)の値。水位・流量が上昇したかどうかの判定に使う(ばぶ要望、2026-09)。
+function prevVal(obj){
+  if(!obj) return null;
+  const keys=Object.keys(obj).sort();
+  for(let i=keys.length-2;i>=0;i--){
+    if(obj[keys[i]]!==null && obj[keys[i]]!==undefined) return obj[keys[i]];
+  }
+  return null;
+}
+
 function suibunFieldHtml(b){
   const posStyle=`position:absolute;top:${b.top}%;left:${b.left}%;width:${b.width}%;height:${b.height}%;`;
   const editBorder=suibunEditMode?"outline:2px solid #ffeb3b;":"";
@@ -917,7 +927,12 @@ function suibunFieldHtml(b){
         : (b.field==="rnInc") ? Number(val).toFixed(1)
         : String(val);
   }
-  return `<div class="suibun-box" data-id="${b.id}" style="${posStyle}${editBorder}color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;" onpointerdown="suibunDragStart(event,'${b.id}')">${txt}</div>`;
+  // 10分前より水位・流量が上昇していれば▲を数値の前に付ける(ダムは対象外、ばぶ要望、2026-09)。
+  // 流量は上昇幅が50m3/s以上なら▲を赤、それ未満(または水位)は緑にする(ばぶ要望、2026-09)。
+  const isUp = (b.field==="stg" && rec.stgUp) || (b.field==="q" && rec.qUp);
+  const isBigJump = b.field==="q" && rec.qUp && (rec.qDelta||0) >= 50;
+  const arrow = isUp ? `<span style="color:${isBigJump?'#ff5555':'#4dff88'}">▲</span> ` : "";
+  return `<div class="suibun-box" data-id="${b.id}" style="${posStyle}${editBorder}color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;" onpointerdown="suibunDragStart(event,'${b.id}')">${arrow}${txt}</div>`;
 }
 
 // stage(画像)の実際の表示幅に合わせて文字サイズを決める(vwはブラウザ全体の幅基準になり、
@@ -1038,7 +1053,17 @@ async function suibunRefresh(){
         // 取得が一時的にnullを返しただけの場合は前回値を残す(「－」に戻さない)
         if(stg===null){ return; }
         const q = calcFlow(String(stg), id);
-        suibunLive[id]={...(suibunLive[id]||{}), stg, q};
+        // 10分前(1つ前の観測値)と比べて水位・流量が上昇していれば▲を表示する(ばぶ要望、2026-09)。
+        // 流量は上昇幅が50m3/s以上なら▲を赤にする(ばぶ要望、2026-09)。
+        const prevStg = prevVal(riverResults[i]);
+        let stgUp=false, qUp=false, qDelta=0;
+        if(prevStg!==null){
+          stgUp = Number(stg) > Number(prevStg);
+          const prevQ = calcFlow(String(prevStg), id);
+          qDelta = (Number(q)||0) - (Number(prevQ)||0);
+          qUp = qDelta > 0;
+        }
+        suibunLive[id]={...(suibunLive[id]||{}), stg, q, stgUp, qUp, qDelta};
       });
       // ダム：river.go.jpの当該エンドポイントはCORS非対応のため、
       // 「fetch dam.py」が定期的にFirebase(dam_live)へ書き込んだ値を読む
@@ -1050,7 +1075,11 @@ async function suibunRefresh(){
       const oshimaQ = Number(suibunLive.oshima?.q);
       const besshoQ = Number(suibunLive.bessho?.q);
       const osekiQ = (!isNaN(oshimaQ) && !isNaN(besshoQ)) ? Math.round((oshimaQ+besshoQ)*100)/100 : "";
-      suibunLive.oseki = {stg:null, q:osekiQ};
+      const prevOsekiQ = Number(suibunLive.oseki?.q);
+      const osekiHasPrev = osekiQ!=="" && !isNaN(prevOsekiQ);
+      const osekiQDelta = osekiHasPrev ? Number(osekiQ) - prevOsekiQ : 0;
+      const osekiQUp = osekiHasPrev ? osekiQDelta > 0 : false;
+      suibunLive.oseki = {stg:null, q:osekiQ, qUp:osekiQUp, qDelta:osekiQDelta};
     }catch(e){ /* 取得失敗時は既存表示を維持 */ }
     renderSuibun();
     const statusEl2=document.getElementById("suibun-status");
@@ -1346,7 +1375,7 @@ async function initRainMap(){
     metaPromise.then(data => { rainViewerCache = {data, fetchedAt: Date.now()}; }).catch(()=>{});
   }
 
-  rainMapInstance = L.map(el).setView([35.0, 134.98], 9);
+  rainMapInstance = L.map(el).setView([35.0, 134.98], 8);
   // 背景地図は道路・施設名などの情報量が多いOSM標準タイルだと雨雲が埋もれて見えづらい
   // (ばぶ報告、2026-09)。CartoDBの無料タイルはAPIキー登録が必須になっており
   // 「API KEY REQUIRED」の透かしが出てしまった(ばぶ報告)ため、キー不要で地味な配色の
