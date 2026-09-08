@@ -982,7 +982,7 @@ function renderSuibun(){
         <option value="rain"${!isMain?" selected":""}>雨量</option>
       </select>
     </div>
-    ${isMain?`<div class="sp-note">📡 河川5地点・ダム6基ともriver.go.jpより自動取得。データが無い項目(貯水量など)は「－」表示です。</div>`:`<div class="sp-note">☔ 雨量17地点(累計雨量mm)をriver.go.jpより自動取得しています。</div>`}
+    ${isMain?`<div class="sp-note">📡 河川5地点・ダム6基ともriver.go.jpより自動取得。データが無い項目(貯水量など)は「－」表示です。</div><div class="sp-note">${'<span style="color:#4dff88">▲</span>'} 10分前より水位・流量が上昇　${'<span style="color:#ff5555">▲</span>'} 流量が50m³/s以上上昇(ダムを除く)</div>`:`<div class="sp-note">☔ 雨量17地点(累計雨量mm)をriver.go.jpより自動取得しています。</div>`}
   `;
   const clockEl=document.getElementById("suibun-clock");
   if(clockEl) clockEl.textContent=suibunClockText();
