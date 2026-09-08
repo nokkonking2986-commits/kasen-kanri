@@ -931,7 +931,7 @@ function suibunFieldHtml(b){
   // 流量は上昇幅が50m3/s以上なら▲を赤、それ未満(または水位)は緑にする(ばぶ要望、2026-09)。
   const isUp = (b.field==="stg" && rec.stgUp) || (b.field==="q" && rec.qUp);
   const isBigJump = b.field==="q" && rec.qUp && (rec.qDelta||0) >= 50;
-  const arrow = isUp ? `<span style="color:${isBigJump?'#ff5555':'#4dff88'}">▲</span> ` : "";
+  const arrow = isUp ? `<span style="color:${isBigJump?'#ff5555':'#4dff88'};margin-right:0.3em">▲</span>` : "";
   return `<div class="suibun-box" data-id="${b.id}" style="${posStyle}${editBorder}color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;" onpointerdown="suibunDragStart(event,'${b.id}')">${arrow}${txt}</div>`;
 }
 
