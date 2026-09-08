@@ -1318,10 +1318,29 @@ function renderRadar(){
 // maxNativeZoomを7に制限し、それ以上はLeafletにズーム7のタイルを拡大表示させることで回避する。
 const RADAR_MAX_NATIVE_ZOOM = 7;
 
+// RainViewerのメタデータ(現在時刻に対応するタイルパス)は取得に数百ms〜数秒かかり、
+// 地図の背景タイルより体感で遅れて見える原因になっていた(ばぶ報告、2026-09)。
+// RainViewer自体の更新間隔が約10分なので、直近3分以内に取得済みなら使い回して
+// 画面を開き直した時に色が即表示されるようにする(データが古い場合はバックグラウンドで再取得)。
+let rainViewerCache = null; // {data, fetchedAt}
+const RAINVIEWER_CACHE_TTL_MS = 3 * 60 * 1000;
+
+function fetchRainViewerMeta(){
+  return fetch("https://api.rainviewer.com/public/weather-maps.json").then(res => res.json());
+}
+
 async function initRainMap(){
   const el = document.getElementById("rain-map");
   if(!el || typeof L === "undefined") return;
   if(rainMapInstance){ rainMapInstance.remove(); rainMapInstance = null; }
+
+  // 地図本体(背景タイル・ピン)の準備と並行して、RainViewerのメタデータ取得を先に開始しておく。
+  const cacheIsFresh = rainViewerCache && (Date.now() - rainViewerCache.fetchedAt < RAINVIEWER_CACHE_TTL_MS);
+  const metaPromise = cacheIsFresh ? Promise.resolve(rainViewerCache.data) : fetchRainViewerMeta();
+  if(!cacheIsFresh){
+    metaPromise.then(data => { rainViewerCache = {data, fetchedAt: Date.now()}; }).catch(()=>{});
+  }
+
   rainMapInstance = L.map(el).setView([35.0, 134.98], 9);
   // 背景地図は道路・施設名などの情報量が多いOSM標準タイルだと雨雲が埋もれて見えづらい
   // (ばぶ報告、2026-09)。CartoDBの無料タイルはAPIキー登録が必須になっており
@@ -1335,11 +1354,11 @@ async function initRainMap(){
     Object.entries(RAIN_STATION_COORDS).map(([name, latlon])=> L.marker(latlon).bindPopup(`🌧️ ${name}`))
   );
   if(rainPinsVisible) rainPinLayer.addTo(rainMapInstance);
+
   // 雨雲レーダーをタイルとして地図に重ねる(RainViewer公開API、認証不要、約10分ごとに更新)。
   // OSM地図は正確な緯度経度を持つため、tenki.jpの静止画と違って観測所ピンとズレなく重なる。
   try{
-    const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
-    const data = await res.json();
+    const data = await metaPromise;
     const frames = data?.radar?.past || [];
     const latest = frames[frames.length-1];
     if(latest){
