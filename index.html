@@ -1147,12 +1147,19 @@ function ryuikiParseKey(k){
 // river.go.jpの累計雨量(降り始めからの積算)は無降雨が続いても更新のタイミング次第で
 // すぐに0へ戻らないことがあるため、6時間無降雨が続いた行は累計雨量を0とみなして表示する
 // (ばぶ要望、2026-09)。
+// 堰コン実データ(G:\...\11雨量データ(10分CSV))で検証したところ、堰コンの累計雨量は
+// 10分ごとではなく毎正時(:00)にしか判定が更新されない(正時の6時間雨量が0になった
+// 次の正時で初めて0にリセットされる)。10分ごとに継続判定すると堰コンより早く0に
+// なってしまう(ばぶ指摘、2026-09)ため、直近の正時を基準に過去6時間を判定する。
 function ryuikiIsDry6h(allKeys, idx, site){
-  const targetTime = ryuikiParseKey(allKeys[idx]).getTime();
-  const cutoff = targetTime - 6*3600*1000;
+  const t = ryuikiParseKey(allKeys[idx]);
+  const flooredHour = new Date(t.getFullYear(), t.getMonth(), t.getDate(), t.getHours(), 0, 0, 0).getTime();
+  const cutoff = flooredHour - 6*3600*1000;
   for(let j=idx; j>=0; j--){
     const kj = allKeys[j];
-    if(ryuikiParseKey(kj).getTime() < cutoff) break;
+    const kt = ryuikiParseKey(kj).getTime();
+    if(kt > flooredHour) continue;
+    if(kt < cutoff) break;
     const v = ryuikiHistory[kj]?.[site]?.rn10m;
     if(v!=null && v>0) return false;
   }
