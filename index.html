@@ -1089,9 +1089,18 @@ async function suibunRefresh(){
       // 雨量：river.go.jpの当該エンドポイントはCORS非対応のため、
       // 「fetch_rain.py」が定期的にFirebase(rain_live)へ書き込んだ値を読む
       const rainLive = await fbGet("rain_live");
+      // 6時間無降雨なら累計を0とみなす(流域雨量画面と同じ判定・同じデータを使い、
+      // 画面間で累計雨量の表示が食い違わないようにする。ばぶ指摘、2026-09)。
+      ryuikiHistory = await fbGet("rain_history");
+      const rainAllKeys = ryuikiHistory ? Object.keys(ryuikiHistory).sort() : [];
+      const rainLatestIdx = rainAllKeys.length - 1;
       Object.keys(RAIN_OBSCD).forEach(id=>{
         const v = (rainLive && rainLive[id]) || {};
-        suibunLive[id]={...(suibunLive[id]||{}), rnInc: v.rnInc};
+        let rnInc = v.rnInc;
+        if(rnInc!=null && rainLatestIdx>=0 && ryuikiIsDry6h(rainAllKeys, rainLatestIdx, id)){
+          rnInc = 0;
+        }
+        suibunLive[id]={...(suibunLive[id]||{}), rnInc};
       });
       suibunRainLoaded=true;
     }catch(e){ /* 取得失敗時は既存表示を維持 */ }
