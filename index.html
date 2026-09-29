@@ -1133,6 +1133,26 @@ const RYUIKI_SYSTEM_OF = {
   taniue:"別所橋系統", yoshikawa:"別所橋系統", hosokawa:"別所橋系統",
   hojo:"万願寺系統",
 };
+// 堰コンの「流域平均」と一致させるためのティーセン係数(流入量予測analysis/features.pyの
+// THIESSEN_ZENRYUIKIと同じ値)。以前は単純平均だったが、堰コン表示値とズレる
+// (ばぶ指摘、2026-09)ため加重平均に変更。欠測観測所は無視し、残った観測所の重みで
+// 再正規化する(features.pyのweighted_rainfallと同じ方式)。
+const RYUIKI_WEIGHTS = {
+  aogaki:0.063, hikami:0.060, kaibara:0.058, fukuzumi:0.046, hiuchi:0.075,
+  funamachi:0.067, sugihara:0.064, yachiyo:0.075, itanami:0.063, konda:0.067,
+  hojo:0.058, tenjin:0.051, yoshikawa:0.054, ono:0.067, taniue:0.048,
+  hosokawa:0.075, oze:0.009,
+};
+function ryuikiWeightedAvg(valsBySite){
+  let weightSum=0, valueSum=0;
+  for(const [site,v] of Object.entries(valsBySite)){
+    if(v==null||isNaN(v)) continue;
+    const w = RYUIKI_WEIGHTS[site]||0;
+    weightSum += w;
+    valueSum += w*v;
+  }
+  return weightSum>0 ? Math.round((valueSum/weightSum)*10)/10 : null;
+}
 let ryuikiHistory = null; // {"YYYYMMDDHHmm": {site:{rnHr,rn10m}, _time}, ...}
 let ryuikiMode = "10min"; // "10min" | "hour"
 
@@ -1207,10 +1227,10 @@ function renderRyuiki(){
       if(raw==null) return null;
       return ryuikiIsDry6h(allKeys, idxInAll, site) ? 0 : raw;
     });
-    const nums = vals.filter(v=> v!=null && !isNaN(v));
-    const incNums = incVals.filter(v=> v!=null && !isNaN(v));
-    const avg = nums.length ? Math.round((nums.reduce((a,b)=>a+b,0)/nums.length)*10)/10 : null;
-    const avgInc = incNums.length ? Math.round((incNums.reduce((a,b)=>a+b,0)/incNums.length)*10)/10 : null;
+    const valsBySite = Object.fromEntries(RYUIKI_STATIONS.map(([site],i)=>[site, vals[i]]));
+    const incValsBySite = Object.fromEntries(RYUIKI_STATIONS.map(([site],i)=>[site, incVals[i]]));
+    const avg = ryuikiWeightedAvg(valsBySite);
+    const avgInc = ryuikiWeightedAvg(incValsBySite);
     const timeLabel = entry._time ? entry._time.slice(5).replace("-","/").replace(" "," ") : k;
     const fmtRain = (v)=> (v==null || isNaN(v)) ? "－" : Number(v).toFixed(1);
     const pairCells = (v,inc)=> `<td class="flow-td">${fmtRain(v)}</td><td class="flow-td">${fmtRain(inc)}</td>`;
@@ -1265,7 +1285,7 @@ function renderRyuiki(){
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
-    <div class="sp-note">☔ 「流域平均」は流域内${RYUIKI_STATIONS.length}観測所の単純平均です。「累計雨量」は降り始めからの積算値(river.go.jp算出)ですが、直近6時間無降雨が続いた場合は0として表示します。数値は流域水文図の雨量モードと同じ観測所・同じデータです。</div>
+    <div class="sp-note">☔ 「流域平均」は流域内${RYUIKI_STATIONS.length}観測所のティーセン係数による加重平均です(堰コン表示値と一致させるため、2026-09〜)。「累計雨量」は降り始めからの積算値(river.go.jp算出)ですが、直近6時間無降雨が続いた場合は0として表示します。数値は流域水文図の雨量モードと同じ観測所・同じデータです。</div>
   `;
   applyRyuikiStickyHeader();
 }
