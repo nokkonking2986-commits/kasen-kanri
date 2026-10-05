@@ -316,6 +316,23 @@ async function kasenAutoFetch() {
       return nr;
     });
 
+    // 6h雨量(ティーセン加重)を自動計算して埋める(従来は空欄で手入力のみだった。ばぶ要望、2026-10)。
+    // 自動計算後もプルダウンでの手動修正は可能。
+    try {
+      const hist = await fetchRainHistoryLastN(50);
+      if(hist) {
+        const allKeys = Object.keys(hist).sort();
+        const now = new Date();
+        rows.forEach(row=>{
+          const mo = parseInt(row.month), da = parseInt(row.day);
+          const [hh,mm] = (row.time||"0:00").split(':').map(Number);
+          const target = new Date(now.getFullYear(), mo-1, da, hh, mm);
+          const val = sixHourWeightedRainAt(hist, allKeys, target);
+          if(val!=null) row.rain = val.toFixed(1);
+        });
+      }
+    } catch(e) { console.error('6h雨量自動計算エラー:', e); }
+
     kasenRows = rows;
     await fbSet("kasen", {rows: kasenRows});
     // 取得が完了するまでの間に別画面(倒伏履歴など)へ移動している場合があるため、
@@ -1156,6 +1173,35 @@ function ryuikiWeightedAvg(valsBySite){
 let ryuikiHistory = null; // {"YYYYMMDDHHmm": {site:{rnHr,rn10m}, _time}, ...}
 let ryuikiMode = "10min"; // "10min" | "hour"
 
+// ===== 河川流量画面: 6h雨量(ティーセン加重)自動計算用 =====
+// rain_historyの直近n件だけ取得する(河川流量は直近2時間+遡り6時間=8時間強で足りる)。
+async function fetchRainHistoryLastN(n){
+  try{
+    const url = `${DB}/rain_history.json?orderBy="$key"&limitToLast=${n}`;
+    const r = await fetch(url);
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ console.error(e); return null; }
+}
+// 指定時刻の直近6時間分のrn10mをティーセン加重平均した合計(=6h雨量)を返す。
+// 流域雨量画面の「累計雨量」(_basin.cumInc)とは別物で、こちらはただの直近6時間の実雨量合計。
+function sixHourWeightedRainAt(history, allKeys, targetDate){
+  const targetMs = targetDate.getTime();
+  const cutoff = targetMs - 6*3600*1000;
+  const sumBySite = {};
+  for(const k of allKeys){
+    const kt = ryuikiParseKey(k).getTime();
+    if(kt > targetMs || kt <= cutoff) continue;
+    const entry = history[k];
+    if(!entry) continue;
+    Object.keys(RYUIKI_WEIGHTS).forEach(site=>{
+      const v = entry[site]?.rn10m;
+      if(v!=null && !isNaN(v)) sumBySite[site] = (sumBySite[site]||0) + v;
+    });
+  }
+  return ryuikiWeightedAvg(sumBySite);
+}
+
 async function refreshRyuikiRain(){
   try{
     ryuikiHistory = await fbGet("rain_history");
@@ -1228,9 +1274,12 @@ function renderRyuiki(){
       return ryuikiIsDry6h(allKeys, idxInAll, site) ? 0 : raw;
     });
     const valsBySite = Object.fromEntries(RYUIKI_STATIONS.map(([site],i)=>[site, vals[i]]));
-    const incValsBySite = Object.fromEntries(RYUIKI_STATIONS.map(([site],i)=>[site, incVals[i]]));
     const avg = ryuikiWeightedAvg(valsBySite);
-    const avgInc = ryuikiWeightedAvg(incValsBySite);
+    // 「流域平均」の累計雨量は、観測所ごとの累計(降り始めがバラバラ)を平均するのではなく、
+    // fetch_rain.pyが流域平均雨量自身の降り始めから積算した値(_basin.cumInc)を使う。
+    // 堰コンのCSVに専用の「流域平均累計雨量」列があり、観測所平均とは別ロジックだと判明したため
+    // (ばぶ提供の実データで確認、2026-09)。
+    const avgInc = entry._basin?.cumInc ?? null;
     const timeLabel = entry._time ? entry._time.slice(5).replace("-","/").replace(" "," ") : k;
     const fmtRain = (v)=> (v==null || isNaN(v)) ? "－" : Number(v).toFixed(1);
     const pairCells = (v,inc)=> `<td class="flow-td">${fmtRain(v)}</td><td class="flow-td">${fmtRain(inc)}</td>`;
@@ -1285,7 +1334,7 @@ function renderRyuiki(){
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
-    <div class="sp-note">☔ 「流域平均」は流域内${RYUIKI_STATIONS.length}観測所のティーセン係数による加重平均です(堰コン表示値と一致させるため、2026-09〜)。「累計雨量」は降り始めからの積算値(river.go.jp算出)ですが、直近6時間無降雨が続いた場合は0として表示します。数値は流域水文図の雨量モードと同じ観測所・同じデータです。</div>
+    <div class="sp-note">☔ 「流域平均」は流域内${RYUIKI_STATIONS.length}観測所のティーセン係数による加重平均です(堰コン表示値と一致させるため、2026-09〜)。観測所ごとの「累計雨量」は降り始めからの積算値(river.go.jp算出)で、直近6時間無降雨が続いた場合は0として表示しますが、「流域平均」列の累計雨量だけは観測所平均ではなく、流域平均雨量自身の降り始めからfetch_rain.pyが積算した値です(堰コンの「流域平均累計雨量」ロジックに合わせたもの、2026-09〜)。数値は流域水文図の雨量モードと同じ観測所・同じデータです。</div>
   `;
   applyRyuikiStickyHeader();
 }
