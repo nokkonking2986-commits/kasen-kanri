@@ -38,6 +38,68 @@ HEADERS = {
 }
 JST = timezone(timedelta(hours=9))
 
+# 堰コンのCSVに「流域平均累計雨量」という観測所とは別の専用列があり、堰コンは観測所ごとの
+# 累計雨量(降り始めがバラバラ)を平均しているのではなく、「流域平均雨量」という1本の時系列を
+# 作ってから、それ自身の降り始め(6時間無降雨明け)を基準に積算している(2026-09、ばぶ提供の
+# 実データで確認)。THIESSEN_ZENRYUIKIは流入量予測analysis/features.pyと同じ値。
+THIESSEN_ZENRYUIKI = {
+    "aogaki": 0.063, "hikami": 0.060, "kaibara": 0.058, "fukuzumi": 0.046, "hiuchi": 0.075,
+    "funamachi": 0.067, "sugihara": 0.064, "yachiyo": 0.075, "itanami": 0.063, "konda": 0.067,
+    "hojo": 0.058, "tenjin": 0.051, "yoshikawa": 0.054, "ono": 0.067, "taniue": 0.048,
+    "hosokawa": 0.075, "oze": 0.009,
+}
+DRY_RESET_SECONDS = 6 * 3600
+
+
+def weighted_avg(values):
+    """欠測観測所は無視し、残った観測所の重みで再正規化する。"""
+    weight_sum = 0.0
+    value_sum = 0.0
+    for site, w in THIESSEN_ZENRYUIKI.items():
+        v = values.get(site)
+        if v is None:
+            continue
+        weight_sum += w
+        value_sum += w * v
+    if weight_sum == 0:
+        return None
+    return round(value_sum / weight_sum, 1)
+
+
+def update_basin_cum(weighted10m, now):
+    """流域平均雨量の「降り始めからの累積」をFirebase(rain_basin_state)に保持し、差分更新する。
+    実行のたびに全履歴を遡って積算し直すと長雨時に重くなるため、状態だけキャッシュしておき、
+    今回の10分値を足すだけで済ませる。"""
+    state_url = f"{FIREBASE_URL}/rain_basin_state.json"
+    res = requests.get(state_url)
+    state = res.json() if res.status_code == 200 and res.json() else {}
+
+    last_run_iso = state.get("lastRunTime")
+    elapsed = (now - datetime.fromisoformat(last_run_iso)).total_seconds() if last_run_iso else 0.0
+
+    cum = state.get("cumInc", 0.0)
+    dry_streak = state.get("dryStreakSec", DRY_RESET_SECONDS)
+    start_time = state.get("startTime")
+
+    v = weighted10m or 0.0
+    if v > 0:
+        if dry_streak >= DRY_RESET_SECONDS:
+            cum = 0.0
+            start_time = now.strftime("%Y-%m-%d %H:%M")
+        cum = round(cum + v, 1)
+        dry_streak = 0.0
+    else:
+        dry_streak += elapsed
+
+    new_state = {
+        "cumInc": cum,
+        "dryStreakSec": dry_streak,
+        "lastRunTime": now.isoformat(),
+        "startTime": start_time,
+    }
+    requests.put(state_url, json=new_state)
+    return cum, start_time
+
 
 def obs_fcd(obs_cd):
     return f"{OFC_CD:05d}{ITMKND_CD:03d}{obs_cd:05d}"
@@ -134,11 +196,26 @@ print(f"Firebase書き込み(kwRainRaw){'成功✅' if ok1.status_code == 200 el
 print(f"Firebase書き込み(kwRainLog){'成功✅' if ok2.status_code == 200 else '失敗❌'}")
 
 # ===== rain_live/rain_history(流域雨量・流域水文図の雨量表示用、旧fetch_rain.py分を統合)=====
+weighted10m = weighted_avg({k: v.get("rn10m") for k, v in rain_live.items()})
+basin_cum, basin_start = update_basin_cum(weighted10m, now)
+print(f"  流域平均: 10分={weighted10m} 累計(降り始め{basin_start}から)={basin_cum}")
+rain_live["_basin"] = {"rn10m": weighted10m, "cumInc": basin_cum, "startTime": basin_start}
+
 ok3 = requests.put(f"{FIREBASE_URL}/rain_live.json", json=rain_live)
 print(f"Firebase書き込み(rain_live){'成功✅' if ok3.status_code == 200 else '失敗❌'}")
 
-history_key = now.strftime("%Y%m%d%H%M")
-history_entry = {k: {"rnHr": v.get("rnHr"), "rn10m": v.get("rn10m"), "rnInc": v.get("rnInc")} for k, v in rain_live.items()}
-history_entry["_time"] = now.strftime("%Y-%m-%d %H:%M")
+# キー・_timeにはスクリプトの実行時刻(now)ではなく、river.go.jpが返す実際の観測時刻(obsTime)を
+# 使う。river.go.jpのデータには配信の遅れがあり、取得時刻通りにラベル付けすると堰コン表示と
+# 時間がズレて見える(ばぶ指摘、2026-09/2026-10)。
+obs_time_str = next((v.get("obsTime") for v in rain_live.values() if isinstance(v, dict) and v.get("obsTime")), None)
+if obs_time_str:
+    obs_dt = datetime.strptime(obs_time_str, "%Y/%m/%d %H:%M")
+else:
+    obs_dt = now  # obsTimeが1件も取れなかった場合のフォールバック
+
+history_key = obs_dt.strftime("%Y%m%d%H%M")
+history_entry = {k: {"rnHr": v.get("rnHr"), "rn10m": v.get("rn10m"), "rnInc": v.get("rnInc")} for k, v in rain_live.items() if k != "_basin"}
+history_entry["_time"] = obs_dt.strftime("%Y-%m-%d %H:%M")
+history_entry["_basin"] = {"cumInc": basin_cum, "startTime": basin_start}
 ok4 = requests.put(f"{FIREBASE_URL}/rain_history/{history_key}.json", json=history_entry)
 print(f"Firebase書き込み(rain_history/{history_key}){'成功✅' if ok4.status_code == 200 else '失敗❌'}")
