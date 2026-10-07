@@ -82,9 +82,13 @@ def update_basin_cum(weighted10m, now):
     start_time = state.get("startTime")
 
     v = weighted10m or 0.0
+    # 雨が止んで6時間経過した時点で即座にリセットする(「次に雨が降った瞬間」まで
+    # 待つ書き方だと、無降雨が何時間続いても累計値が残り続けるバグになる。ばぶ報告、2026-10)。
+    if dry_streak >= DRY_RESET_SECONDS:
+        cum = 0.0
+        start_time = None
     if v > 0:
-        if dry_streak >= DRY_RESET_SECONDS:
-            cum = 0.0
+        if start_time is None:
             start_time = now.strftime("%Y-%m-%d %H:%M")
         cum = round(cum + v, 1)
         dry_streak = 0.0
