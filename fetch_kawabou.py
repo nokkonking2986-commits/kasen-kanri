@@ -7,28 +7,37 @@ ITMKND_CD = 1  # 雨量
 FORECAST_HORIZON_H = 6  # 将来分は0で埋める時間数(アプリ側のFORECAST_HORIZON_Hと合わせる)
 PAGES = 2  # 50時間 x 2 = 約100時間(4日強)分をさかのぼって取得
 
-# (英語キー, 日本語名, obsCd)
-# 英語キー: rain_live/rain_history(流域雨量・流域水文図の雨量表示)用
+# (英語キー, 日本語名, obsCd, ofcCd)
+# 英語キー: rain_live/rain_history(流域雨量・流域水文図の雨量表示)用。THIESSEN_ZENRYUIKI等の
+# 既存キー("hojo"等)とも対応しているため、観測所を差し替えてもキー自体は変更しない。
 # 日本語名: kwRainRaw(実測雨量ベースの流量予測モデルの入力)用。こちらは従来通り大堰を含まない16観測所。
 # obsCdは旧fetch_rain.py(RAIN_OBSCD)と旧fetch_kawabou.py(KAWABOU_STATIONS)で完全一致することを確認済み。
+# ofcCdは通常すべて加古川大堰(22061)。北条雨量計が故障中のため、2026-10よりhojoだけ
+# 加西の観測所(ofcCd=7169, obsCd=15、ばぶが川の防災情報サイトで確認したURLより)からデータを
+# 取得している(北条の雨量計が復旧したらobsCd=9, ofcCd=22061に戻すこと)。
+# 日本語名は意図的に「北条」のまま変更していない。FORECAST_GROUPS等のモデル側コードが
+# kwRainRawをこの日本語名("北条")で参照しているため、表示名を変えるとその場所の参照が
+# 見つからなくなり、万願寺・大島の実測雨量予測が静かに機能しなくなる(2026-10に実際発生、
+# 気づいて修正済み)。観測所を差し替えたことが分かるようにしたい場合は、この行コメントで
+# 管理し、"名前"フィールド自体は変更しないこと。
 STATIONS = [
-    ("aogaki",    "青垣",   10),
-    ("hikami",    "氷上",    1),
-    ("kaibara",   "柏原",   11),
-    ("funamachi", "船町",    3),
-    ("sugihara",  "杉原",   22),
-    ("yachiyo",   "八千代", 13),
-    ("itanami",   "板波",   15),
-    ("tenjin",    "天神",    6),
-    ("hojo",      "北条",    9),
-    ("ono",       "小野",    7),
-    ("yoshikawa", "吉川",   23),
-    ("hosokawa",  "細川",   14),
-    ("taniue",    "谷上",   24),
-    ("fukuzumi",  "福住",   12),
-    ("hiuchi",    "火打岩",  2),
-    ("konda",     "今田",    5),
-    ("oze",       "大堰(加古川)", 17),
+    ("aogaki",    "青垣",   10, 22061),
+    ("hikami",    "氷上",    1, 22061),
+    ("kaibara",   "柏原",   11, 22061),
+    ("funamachi", "船町",    3, 22061),
+    ("sugihara",  "杉原",   22, 22061),
+    ("yachiyo",   "八千代", 13, 22061),
+    ("itanami",   "板波",   15, 22061),
+    ("tenjin",    "天神",    6, 22061),
+    ("hojo",      "北条",   15, 7169),
+    ("ono",       "小野",    7, 22061),
+    ("yoshikawa", "吉川",   23, 22061),
+    ("hosokawa",  "細川",   14, 22061),
+    ("taniue",    "谷上",   24, 22061),
+    ("fukuzumi",  "福住",   12, 22061),
+    ("hiuchi",    "火打岩",  2, 22061),
+    ("konda",     "今田",    5, 22061),
+    ("oze",       "大堰(加古川)", 17, 22061),
 ]
 
 HEADERS = {
@@ -105,17 +114,17 @@ def update_basin_cum(weighted10m, now):
     return cum, start_time
 
 
-def obs_fcd(obs_cd):
-    return f"{OFC_CD:05d}{ITMKND_CD:03d}{obs_cd:05d}"
+def obs_fcd(obs_cd, ofc_cd=OFC_CD):
+    return f"{ofc_cd:05d}{ITMKND_CD:03d}{obs_cd:05d}"
 
 
-def fetch_json(obs_cd, app_time):
+def fetch_json(obs_cd, app_time, ofc_cd=OFC_CD):
     # river.go.jpは10分値ファイルの公開が数分遅れることがあるため、
     # 丸めた時刻からさらに10分引いて、確実に公開済みのファイルを参照する
     # (旧fetch_rain.pyと同じ調整。cron-job.orgでぴったり実行するようになった際、
     # この調整が無いと全観測所404でクラッシュすることを確認済み)。
     app_time = app_time.replace(minute=(app_time.minute // 10) * 10, second=0, microsecond=0) - timedelta(minutes=10)
-    fcd = obs_fcd(obs_cd)
+    fcd = obs_fcd(obs_cd, ofc_cd)
     date_str = app_time.strftime("%Y%m%d")
     time_str = app_time.strftime("%H%M")
     url = f"https://www.river.go.jp/kawabou/file/files/tmlist/rn/{date_str}/{time_str}/{fcd}.json"
@@ -134,14 +143,14 @@ def hourly_from_json(data):
     return result
 
 
-def fetch_station_series(obs_cd, now):
+def fetch_station_series(obs_cd, now, ofc_cd=OFC_CD):
     """時間雨量の履歴(kwRainRaw用)をPAGES回さかのぼって取得しつつ、
     1回目(=最新)の生レスポンスも合わせて返す(rain_live/rain_history用、旧fetch_rain.py分)。"""
     merged = {}
     latest_json = None
     app_time = now
     for i in range(PAGES):
-        data = fetch_json(obs_cd, app_time)
+        data = fetch_json(obs_cd, app_time, ofc_cd)
         if i == 0:
             latest_json = data
         page = hourly_from_json(data)
@@ -159,8 +168,8 @@ now_hour = now.replace(minute=0, second=0, microsecond=0)
 per_station_hourly = {}
 all_hours = set()
 rain_live = {}
-for key, name, obs_cd in STATIONS:
-    hourly, latest_json = fetch_station_series(obs_cd, now)
+for key, name, obs_cd, ofc_cd in STATIONS:
+    hourly, latest_json = fetch_station_series(obs_cd, now, ofc_cd)
     per_station_hourly[name] = hourly
     all_hours.update(hourly.keys())
     nonzero = sorted([(t, v) for t, v in hourly.items() if v], key=lambda x: x[0])[-1:]
@@ -185,7 +194,7 @@ times += [now_hour + timedelta(hours=i) for i in range(1, FORECAST_HORIZON_H + 1
 time_labels = [t.strftime("%Y-%m-%dT%H:00") for t in times]
 
 stations = {}
-for key, name, obs_cd in STATIONS:
+for key, name, obs_cd, ofc_cd in STATIONS:
     if key == "oze":
         continue  # kwRainRaw(流量予測)は従来通り大堰を含まない16観測所のみ
     hourly = per_station_hourly[name]
