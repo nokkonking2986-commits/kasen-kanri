@@ -75,10 +75,17 @@ def weighted_avg(values):
     return round(value_sum / weight_sum, 1)
 
 
-def update_basin_cum(weighted10m, now):
+def update_basin_cum(weighted10m, any_rain, now):
     """流域平均雨量の「降り始めからの累積」をFirebase(rain_basin_state)に保持し、差分更新する。
     実行のたびに全履歴を遡って積算し直すと長雨時に重くなるため、状態だけキャッシュしておき、
-    今回の10分値を足すだけで済ませる。"""
+    今回の10分値を足すだけで済ませる。
+
+    「無降雨かどうか」は、丸めた加重平均(weighted10m)ではなく、17観測所のうちどれか1つでも
+    実際に雨が観測されたか(any_rain)で判定する。谷上のように重み(ティーセン係数0.048)が
+    小さい観測所だけで降雨があった場合、加重平均は0.05mm等になり小数第1位への丸めで
+    0.0mmに消えてしまう。これをそのまま「無降雨」判定に使うと、実際には堰コンの流域平均
+    累計雨量がリセットされていないのに、このアプリ側だけ早くリセットしてしまう不具合になる
+    (ばぶ報告、2026-10。谷上1mm(05:40・05:50)のケースで実際に発生・確認済み)。"""
     state_url = f"{FIREBASE_URL}/rain_basin_state.json"
     res = requests.get(state_url)
     state = res.json() if res.status_code == 200 and res.json() else {}
@@ -96,7 +103,7 @@ def update_basin_cum(weighted10m, now):
     if dry_streak >= DRY_RESET_SECONDS:
         cum = 0.0
         start_time = None
-    if v > 0:
+    if any_rain:
         if start_time is None:
             start_time = now.strftime("%Y-%m-%d %H:%M")
         cum = round(cum + v, 1)
@@ -210,7 +217,8 @@ print(f"Firebase書き込み(kwRainLog){'成功✅' if ok2.status_code == 200 el
 
 # ===== rain_live/rain_history(流域雨量・流域水文図の雨量表示用、旧fetch_rain.py分を統合)=====
 weighted10m = weighted_avg({k: v.get("rn10m") for k, v in rain_live.items()})
-basin_cum, basin_start = update_basin_cum(weighted10m, now)
+any_rain = any((v.get("rn10m") or 0) > 0 for v in rain_live.values())
+basin_cum, basin_start = update_basin_cum(weighted10m, any_rain, now)
 print(f"  流域平均: 10分={weighted10m} 累計(降り始め{basin_start}から)={basin_cum}")
 rain_live["_basin"] = {"rn10m": weighted10m, "cumInc": basin_cum, "startTime": basin_start}
 
