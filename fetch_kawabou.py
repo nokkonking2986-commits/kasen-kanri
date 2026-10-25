@@ -211,9 +211,11 @@ for key, name, obs_cd, ofc_cd in STATIONS:
 kw_payload = {"取得時刻": now.strftime("%Y-%m-%dT%H:%M"), "stations": stations}
 
 ok1 = requests.put(f"{FIREBASE_URL}/kwRainRaw.json", json=kw_payload)
-ok2 = requests.post(f"{FIREBASE_URL}/kwRainLog.json", json=kw_payload)
 print(f"Firebase書き込み(kwRainRaw){'成功✅' if ok1.status_code == 200 else '失敗❌'}")
-print(f"Firebase書き込み(kwRainLog){'成功✅' if ok2.status_code == 200 else '失敗❌'}")
+# kwRainLog(自動採番keyで無期限に追記されるログ)への書き込みは廃止(2026-10)。
+# この実測雨量予測機能は河川管理アプリの画面で使っていないのに、10分おき約35KBずつ
+# 無期限に溜まり続け、約280MBまで肥大化していた(ばぶ指摘、2026-10)。
+# Firebase無料枠(1GB)を圧迫するだけで実害しかないため、kwRainRawの最新値保存のみ残す。
 
 # ===== rain_live/rain_history(流域雨量・流域水文図の雨量表示用、旧fetch_rain.py分を統合)=====
 weighted10m = weighted_avg({k: v.get("rn10m") for k, v in rain_live.items()})
