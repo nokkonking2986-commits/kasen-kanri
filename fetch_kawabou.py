@@ -1,7 +1,14 @@
+import os
 import requests
 from datetime import datetime, timedelta, timezone
 
 FIREBASE_URL = "https://kasen-kanri-default-rtdb.asia-southeast1.firebasedatabase.app"
+# Firebaseのルールを「読み込みは公開・書き込みは秘密鍵が無いと不可」に変更したため(2026-10、
+# 第三者が誰でも書き込み・削除できる状態だった不具合の対応)、書き込み系リクエストにはこの
+# 秘密鍵をauthクエリパラメータとして付ける。値は絶対にコードへ直接書かず、GitHub Actionsの
+# リポジトリSecret(FIREBASE_DB_SECRET)から環境変数経由で受け取る。
+DB_SECRET = os.environ.get("FIREBASE_DB_SECRET", "")
+AUTH_QS = f"?auth={DB_SECRET}" if DB_SECRET else ""
 OFC_CD = 22061
 ITMKND_CD = 1  # 雨量
 FORECAST_HORIZON_H = 6  # 将来分は0で埋める時間数(アプリ側のFORECAST_HORIZON_Hと合わせる)
@@ -117,7 +124,7 @@ def update_basin_cum(weighted10m, any_rain, now):
         "lastRunTime": now.isoformat(),
         "startTime": start_time,
     }
-    requests.put(state_url, json=new_state)
+    requests.put(f"{state_url}{AUTH_QS}", json=new_state)
     return cum, start_time
 
 
@@ -210,7 +217,7 @@ for key, name, obs_cd, ofc_cd in STATIONS:
 
 kw_payload = {"取得時刻": now.strftime("%Y-%m-%dT%H:%M"), "stations": stations}
 
-ok1 = requests.put(f"{FIREBASE_URL}/kwRainRaw.json", json=kw_payload)
+ok1 = requests.put(f"{FIREBASE_URL}/kwRainRaw.json{AUTH_QS}", json=kw_payload)
 print(f"Firebase書き込み(kwRainRaw){'成功✅' if ok1.status_code == 200 else '失敗❌'}")
 # kwRainLog(自動採番keyで無期限に追記されるログ)への書き込みは廃止(2026-10)。
 # この実測雨量予測機能は河川管理アプリの画面で使っていないのに、10分おき約35KBずつ
@@ -224,7 +231,7 @@ basin_cum, basin_start = update_basin_cum(weighted10m, any_rain, now)
 print(f"  流域平均: 10分={weighted10m} 累計(降り始め{basin_start}から)={basin_cum}")
 rain_live["_basin"] = {"rn10m": weighted10m, "cumInc": basin_cum, "startTime": basin_start}
 
-ok3 = requests.put(f"{FIREBASE_URL}/rain_live.json", json=rain_live)
+ok3 = requests.put(f"{FIREBASE_URL}/rain_live.json{AUTH_QS}", json=rain_live)
 print(f"Firebase書き込み(rain_live){'成功✅' if ok3.status_code == 200 else '失敗❌'}")
 
 # キー・_timeにはスクリプトの実行時刻(now)ではなく、river.go.jpが返す実際の観測時刻(obsTime)を
@@ -240,5 +247,5 @@ history_key = obs_dt.strftime("%Y%m%d%H%M")
 history_entry = {k: {"rnHr": v.get("rnHr"), "rn10m": v.get("rn10m"), "rnInc": v.get("rnInc")} for k, v in rain_live.items() if k != "_basin"}
 history_entry["_time"] = obs_dt.strftime("%Y-%m-%d %H:%M")
 history_entry["_basin"] = {"cumInc": basin_cum, "startTime": basin_start}
-ok4 = requests.put(f"{FIREBASE_URL}/rain_history/{history_key}.json", json=history_entry)
+ok4 = requests.put(f"{FIREBASE_URL}/rain_history/{history_key}.json{AUTH_QS}", json=history_entry)
 print(f"Firebase書き込み(rain_history/{history_key}){'成功✅' if ok4.status_code == 200 else '失敗❌'}")
