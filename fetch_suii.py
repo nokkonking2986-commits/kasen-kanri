@@ -1,7 +1,14 @@
+import os
 import requests
 from datetime import datetime, timezone, timedelta
 
 FIREBASE_URL = "https://kasen-kanri-default-rtdb.asia-southeast1.firebasedatabase.app"
+# Firebaseのルールを「読み込みは公開・書き込みは秘密鍵が無いと不可」に変更したため(2026-10、
+# 第三者が誰でも書き込み・削除できる状態だった不具合の対応)、書き込み系リクエストにはこの
+# 秘密鍵をauthクエリパラメータとして付ける。値は絶対にコードへ直接書かず、GitHub Actionsの
+# リポジトリSecret(FIREBASE_DB_SECRET)から環境変数経由で受け取る。
+DB_SECRET = os.environ.get("FIREBASE_DB_SECRET", "")
+AUTH_QS = f"?auth={DB_SECRET}" if DB_SECRET else ""
 RIVER_FILES = {
     "oshima":    "2206100400006",
     "bessho":    "2206100400007",
@@ -87,5 +94,5 @@ for t in times:
     rows.append(make_row(t, suii, rain_val))
     print(f"  {t}: 大島={suii['oshima']} 別所橋={suii['bessho']} 板波={suii['itanami']} 万願寺={suii['manganji']} 船町={suii['funamachi']} 雨量={rain_val}")
 
-ok = requests.put(f"{FIREBASE_URL}/kasen.json", json={"rows": rows})
+ok = requests.put(f"{FIREBASE_URL}/kasen.json{AUTH_QS}", json={"rows": rows})
 print(f"Firebase書き込み{'成功✅' if ok.status_code==200 else '失敗❌'}")
