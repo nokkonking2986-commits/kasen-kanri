@@ -189,7 +189,7 @@ for key, name, obs_cd, ofc_cd in STATIONS:
     nonzero = sorted([(t, v) for t, v in hourly.items() if v], key=lambda x: x[0])[-1:]
     print(f"  {name}: 直近非ゼロ={nonzero if nonzero else 'なし'}")
 
-    ov = (latest_json or {}).get("obsValue", {})
+    ov = (latest_json or {}).get("obsValue") or {}
     rain_live[key] = {
         "rnInc": ov.get("rnInc") if ov.get("rnIncCcd") == 0 else None,
         "rnHr":  ov.get("rnHr")  if ov.get("rnHrCcd")  == 0 else None,
